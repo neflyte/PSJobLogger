@@ -124,53 +124,112 @@ class PSJobLogger {
     }
 
     [void]
+    FlushProgressStream() {
+        $progressRecords = @{}
+        [ConcurrentDictionary[String, Hashtable]]$progressQueue = $this.MessageTables.$([PSJobLogger]::StreamProgress)
+        foreach ($queueKey in $progressQueue.Keys) {
+            $progressRecords.$queueKey = @{} + $progressQueue.$queueKey
+        }
+        # write progress records
+        foreach ($recordKey in $progressRecords.Keys) {
+            if ($null -eq $progressRecords.$recordKey) {
+                continue
+            }
+            $progressArgs = $progressRecords.$recordKey
+            $progressError = $null
+            Write-Progress @progressArgs -ErrorAction SilentlyContinue -ErrorVariable progressError
+            if ($null -ne $progressError) {
+                $progressError | ForEach-Object {
+                    $this.Error($($_ | Out-String))
+                }
+            }
+            # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
+            if ($null -ne $progressArgs.Completed -and [Boolean]$progressArgs.Completed) {
+                $progressQueue.TryRemove($recordKey, [ref]@{})
+            }
+        }
+    }
+
+    [void]
     FlushOneStream([int]$Stream) {
         if ($null -eq $this.MessageTables.$Stream) {
             return
         }
-        $messages = @()
-        # drain the queue, unless it's the Progress stream
+        # The Progress stream is handled elsewhere since it is different
         if ($Stream -eq [PSJobLogger]::StreamProgress) {
-            [ConcurrentDictionary[String, Hashtable]]$progressQueue = $this.MessageTables.$Stream
-            foreach ($queueKey in $progressQueue.Keys) {
-                $messages += @($progressQueue.$queueKey)
-            }
+            $this.FlushProgressStream()
+            return
         }
-        else {
-            [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
-            $dequeuedMessage = ''
-            while ($messageQueue.Count -gt 0) {
-                if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
-                    break
-                }
-                $messages += @($dequeuedMessage)
+        # Handle the remaining streams
+        [String[]]$messages = @()
+        [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
+        $dequeuedMessage = ''
+        while ($messageQueue.Count -gt 0) {
+            if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
+                break
             }
+            $messages += @($dequeuedMessage)
         }
         # write messages to the desired stream
         foreach ($message in $messages) {
             switch ($Stream) {
-                # $message is a [String] unless it's the Progress stream
                 ([PSJobLogger]::StreamSuccess) {
-                    Write-Output "$( $this.Prefix )${message}"
+                    $outputError = $null
+                    Write-Output "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable outputError
+                    if ($null -ne $outputError) {
+                        $outputError | ForEach-Object {
+                            $this.Error($($_ | Out-String))
+                        }
+                    }
                 }
                 ([PSJobLogger]::StreamError) {
-                    Write-Error "$( $this.Prefix )${message}"
+                    $errorstreamError = $null
+                    Write-Error "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
+                    if ($null -ne $errorstreamError) {
+                        $errorstreamError | ForEach-Object {
+                            Write-Error ($_ | Out-String)
+                        }
+                    }
                 }
                 ([PSJobLogger]::StreamWarning) {
-                    Write-Warning "$( $this.Prefix )${message}"
+                    $warningError = $null
+                    Write-Warning "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable warningError
+                    if ($null -ne $warningError) {
+                        $warningError | ForEach-Object {
+                            $this.Error($($_ | Out-String))
+                        }
+                    }
                 }
                 ([PSJobLogger]::StreamVerbose) {
-                    Write-Verbose "$( $this.Prefix )${message}"
+                    $verboseError = $null
+                    Write-Verbose "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable verboseError
+                    if ($null -ne $verboseError) {
+                        $verboseError | ForEach-Object {
+                            $this.Error($($_ | Out-String))
+                        }
+                    }
                 }
                 ([PSJobLogger]::StreamDebug) {
-                    Write-Debug "$( $this.Prefix )${message}"
+                    $debugError = $null
+                    Write-Debug "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable debugError
+                    if ($null -ne $debugError) {
+                        $debugError | ForEach-Object {
+                            $this.Error($($_ | Out-String))
+                        }
+                    }
                 }
                 ([PSJobLogger]::StreamInformation) {
-                    Write-Information "$( $this.Prefix )${message}"
+                    $informationError = $null
+                    Write-Information "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable informationError
+                    if ($null -ne $informationError) {
+                        $informationError | ForEach-Object {
+                            $this.Error($($_ | Out-String))
+                        }
+                    }
                 }
-                # $message is a [Hashtable] for the Progress stream
                 ([PSJobLogger]::StreamProgress) {
-                    Write-Progress @message
+                    # This should never be reached, but it's here just in case.
+                    continue
                 }
                 default {
                     Write-Error "$( $this.Prefix )unexpected stream ${Stream}"
