@@ -1,9 +1,6 @@
 using module '../PSJobLogger/PSJobLogger.psd1'
 using namespace System.Collections.Concurrent
 
-[String]$LoggerName
-[PSJobLogger]$logger
-
 InModuleScope PSJobLogger {
     Describe 'PSJobLogger' {
         BeforeAll {
@@ -43,6 +40,44 @@ InModuleScope PSJobLogger {
                 $progressArgs.Keys.Count | Should -Be 2
                 $progressArgs.Id | Should -Be 1
                 $progressArgs.Activity | Should -Be 'bar'
+            }
+            It 'updates a map' {
+                $progressTable = $logger.MessageTables.$([PSJobLogger]::StreamProgress)
+                # write a progress entry
+                $logger.Progress('foo', @{ Id = 1; Activity = 'bar'; Status = 'fnord'; PercentComplete = -1 })
+                # validate it
+                $progressTable.Keys.Count | Should -Be 1
+                $progressTable.Keys[0]| Should -Be 'foo'
+                $progressArgs = $progressTable.foo
+                $progressArgs.Keys.Count | Should -Be 4
+                $progressArgs.Id | Should -Be 1
+                $progressArgs.Activity | Should -Be 'bar'
+                $progressArgs.Status | Should -Be 'fnord'
+                $progressArgs.PercentComplete | Should -Be -1
+                # update the existing map
+                $logger.Progress('foo', @{ Completed = $true })
+                # validate the update
+                $progressTable.Keys.Count | Should -Be 1
+                $progressTable.Keys[0]| Should -Be 'foo'
+                $progressArgs = $progressTable.foo
+                $progressArgs.Keys.Count | Should -Be 5
+                $progressArgs.Id | Should -Be 1
+                $progressArgs.Activity | Should -Be 'bar'
+                $progressArgs.Status | Should -Be 'fnord'
+                $progressArgs.PercentComplete | Should -Be -1
+                $progressArgs.Completed | Should -BeTrue
+                # update the map again and remove a key
+                $logger.Progress('foo', @{ PercentComplete = $null; Activity = 'zot'; Status = 'baz' })
+                # validate the update
+                $progressTable.Keys.Count | Should -Be 1
+                $progressTable.Keys[0]| Should -Be 'foo'
+                $progressArgs = $progressTable.foo
+                $progressArgs.Keys.Count | Should -Be 4
+                $progressArgs.Id | Should -Be 1
+                $progressArgs.Activity | Should -Be 'zot'
+                $progressArgs.Status | Should -Be 'baz'
+                $progressArgs.PercentComplete | Should -Be $null
+                $progressArgs.Completed | Should -BeTrue
             }
         }
 
