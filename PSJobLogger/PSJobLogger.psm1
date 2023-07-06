@@ -172,10 +172,11 @@ class PSJobLogger {
         }
         # write messages to the desired stream
         foreach ($message in $messages) {
+            $messageWithPrefix = "$( $this.Prefix )${message}"
             switch ($Stream) {
                 ([PSJobLogger]::StreamSuccess) {
                     $outputError = $null
-                    Write-Output "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable outputError
+                    Write-Output $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
                     if ($null -ne $outputError) {
                         $outputError | ForEach-Object {
                             $this.Error($($_ | Out-String))
@@ -184,7 +185,7 @@ class PSJobLogger {
                 }
                 ([PSJobLogger]::StreamError) {
                     $errorstreamError = $null
-                    Write-Error "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
+                    Write-Error $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
                     if ($null -ne $errorstreamError) {
                         $errorstreamError | ForEach-Object {
                             Write-Error ($_ | Out-String)
@@ -193,7 +194,7 @@ class PSJobLogger {
                 }
                 ([PSJobLogger]::StreamWarning) {
                     $warningError = $null
-                    Write-Warning "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable warningError
+                    Write-Warning $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
                     if ($null -ne $warningError) {
                         $warningError | ForEach-Object {
                             $this.Error($($_ | Out-String))
@@ -202,7 +203,7 @@ class PSJobLogger {
                 }
                 ([PSJobLogger]::StreamVerbose) {
                     $verboseError = $null
-                    Write-Verbose "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable verboseError
+                    Write-Verbose $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
                     if ($null -ne $verboseError) {
                         $verboseError | ForEach-Object {
                             $this.Error($($_ | Out-String))
@@ -211,7 +212,7 @@ class PSJobLogger {
                 }
                 ([PSJobLogger]::StreamDebug) {
                     $debugError = $null
-                    Write-Debug "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable debugError
+                    Write-Debug $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
                     if ($null -ne $debugError) {
                         $debugError | ForEach-Object {
                             $this.Error($($_ | Out-String))
@@ -220,7 +221,7 @@ class PSJobLogger {
                 }
                 ([PSJobLogger]::StreamInformation) {
                     $informationError = $null
-                    Write-Information "$( $this.Prefix )${message}" -ErrorAction SilentlyContinue -ErrorVariable informationError
+                    Write-Information $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
                     if ($null -ne $informationError) {
                         $informationError | ForEach-Object {
                             $this.Error($($_ | Out-String))
