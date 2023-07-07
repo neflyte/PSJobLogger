@@ -1,8 +1,23 @@
 [CmdletBinding()]
 param(
-    [String]$Directory = $PWD
+    [String]$Directory = $PWD,
+    [String]$Logfile,
+    [int]$Threads = 4
 )
+
+function Logtofile {
+    param(
+        [String]$Logfile,
+        [String]$Message
+    )
+    Out-File -FilePath $Logfile -Append -InputObject $Message
+}
+
 Import-Module '../PSJobLogger' -Force
+if ($Threads -lt 1) {
+    Write-Error "must use at least one thread"
+    exit
+}
 if ($Directory -eq '' -or -not(Test-Path $Directory)) {
     Write-Error "must specify a valid directory"
     exit
@@ -24,35 +39,46 @@ $mp3Files | ForEach-Object {
     })
     $counter++
 }
-Write-Output "Processing $($filesToProcess.Count) files using 4 threads"
+Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads"
 $jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files'
-$job = $filesToProcess | ForEach-Object -ThrottleLimit 4 -AsJob -Parallel {
+if ($Logfile -ne '') {
+    $jobLog.SetLogfile($Logfile)
+}
+$job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
     $log = $using:jobLog
 
     $id = $_.Id
     $name = $_.Name
     $fullName = $_.FullName
 
-    $log.Progress($fullName, @{ Id = $id; Activity = $name; Status = 'Processing'; PercentComplete = -1 })
-
-    $mp3gainArgs = @('-e','-r','-c','-k' <#,'-s','r'#> ,$fullName)
+    $mp3gainArgs = @('-e', '-r', '-c', '-k' <#,'-s','r'#>, $fullName)
     $log.Debug("mp3gain ${mp3gainArgs} 2>&1")
-    mp3gain $mp3gainArgs 2>&1 | ForEach-Object {
-        if ($_ -match "([0-9]+)% of ([0-9]+) bytes analyzed") {
-            $log.Progress($fullName, @{ PercentComplete = [int]$Matches[1]; Status = "Analyzing $($Matches[2]) bytes" })
+    $log.Progress($fullName, @{ Id = $id; Activity = $name; Status = 'Processing'; PercentComplete = -1 })
+    #$prevErrorActionPref = $ErrorActionPreference
+    try {
+        #$ErrorActionPreference = 'SilentlyContinue'
+        mp3gain $mp3gainArgs 2>&1 | ForEach-Object {
+            if ($_ -match '([0-9]+)% of ([0-9]+) bytes analyzed') {
+                $log.Progress($fullName, @{ PercentComplete = [int]$Matches[1]; Status = "Analyzing $( $Matches[2] ) bytes" })
+            }
         }
+        #$ErrorActionPreference = $prevErrorActionPref
+    } catch {
+        $log.Logtofile("error running mp3gain: $($_)")
+        $log.Error("error running mp3gain: $($_)")
+    } finally {
+        $log.Progress($fullName, @{ Completed = $true })
     }
-
-    $log.Progress($fullName, @{ Completed = $true })
 }
 while ($job.State -eq 'Running') {
-    # flush logs
+    Logtofile -Logfile $Logfile -Message "job.State=$($job.State)"
     $jobLog.FlushStreams()
     # small sleep to not overload the ui
     Start-Sleep -Seconds 0.25
 }
+Logtofile -Logfile $Logfile -Message "jobs finished; job.State=$($job.State)"
 Write-Output "Waiting for jobs to finish"
-$null = Wait-Job $job.Id
+$job | Wait-Job | Remove-Job -Force
 Write-Output "Jobs complete."
 # flush any remaining logs
 $jobLog.FlushStreams()
