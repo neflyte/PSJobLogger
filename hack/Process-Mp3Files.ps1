@@ -43,6 +43,9 @@ Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads
 $jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
     $log = $using:jobLog
+    trap {
+        $log.Error($_)
+    }
 
     $id = $_.Id
     $name = $_.Name
@@ -53,7 +56,7 @@ $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel
     $log.Progress($fullName, @{ Id = $id; Activity = $name; Status = 'Processing'; PercentComplete = -1 })
     try {
         $log.Debug("try start ${name}")
-        $ErrorActionPreference = 'SilentlyContinue'
+        $ErrorActionPreference = 'Stop'
         mp3gain $mp3gainArgs 2>&1 | ForEach-Object {
             $log.Debug("mp3gain: $($_)")
             if ($_ -match '([0-9]+)% of ([0-9]+) bytes analyzed') {
@@ -91,3 +94,9 @@ Write-Output "Jobs complete."
 $jobLog.FlushStreams()
 # all done.
 Write-Output 'done.'
+
+<#
+- use TryAdd, etc. methods on ConcurrentDictionary
+  - use $foo[$key] to retrieve
+- use `throw` to ensure parallel execution is terminated on error
+#>
