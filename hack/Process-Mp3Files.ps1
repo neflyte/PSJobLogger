@@ -40,10 +40,7 @@ $mp3Files | ForEach-Object {
     $counter++
 }
 Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads"
-$jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files'
-if ($Logfile -ne '') {
-    $jobLog.SetLogfile($Logfile)
-}
+$jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
     $log = $using:jobLog
 
@@ -54,29 +51,39 @@ $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel
     $mp3gainArgs = @('-e', '-r', '-c', '-k' <#,'-s','r'#>, $fullName)
     $log.Debug("mp3gain ${mp3gainArgs} 2>&1")
     $log.Progress($fullName, @{ Id = $id; Activity = $name; Status = 'Processing'; PercentComplete = -1 })
-    #$prevErrorActionPref = $ErrorActionPreference
     try {
-        #$ErrorActionPreference = 'SilentlyContinue'
+        $log.Debug("try start ${name}")
+        $ErrorActionPreference = 'SilentlyContinue'
         mp3gain $mp3gainArgs 2>&1 | ForEach-Object {
+            $log.Debug("mp3gain: $($_)")
             if ($_ -match '([0-9]+)% of ([0-9]+) bytes analyzed') {
-                $log.Progress($fullName, @{ PercentComplete = [int]$Matches[1]; Status = "Analyzing $( $Matches[2] ) bytes" })
+                $log.Progress($fullName, @{ PercentComplete = [int]$Matches[1]; Status = "Analyzing $($Matches[2]) bytes" })
             }
         }
-        #$ErrorActionPreference = $prevErrorActionPref
+        $log.Debug("LASTEXITCODE ${name}: ${LASTEXITCODE}")
+        $log.Debug("try end ${name}")
     } catch {
-        $log.Logtofile("error running mp3gain: $($_)")
+        $log.Debug("try end ${name} ERROR: $($_)")
         $log.Error("error running mp3gain: $($_)")
     } finally {
+        $log.Debug("finally ${name}")
         $log.Progress($fullName, @{ Completed = $true })
     }
+    $log.Debug("DONE ${name}")
 }
 while ($job.State -eq 'Running') {
-    Logtofile -Logfile $Logfile -Message "job.State=$($job.State)"
+    # show job state
+    $childJobCount = $job.ChildJobs.Count
+    $finishedJobs = ($job.ChildJobs | Where-Object State -EQ 'Completed').Count
+    $runningJobs = ($job.ChildJobs | Where-Object State -EQ 'Running').Count
+    $pendingJobs = ($job.ChildJobs | Where-Object State -EQ 'Pending').Count
+    Write-Host "child jobs: ${childJobCount}; finished=${finishedJobs}, running=${runningJobs}, pending=${pendingJobs}"
+    # flush streams
     $jobLog.FlushStreams()
     # small sleep to not overload the ui
     Start-Sleep -Seconds 0.25
 }
-Logtofile -Logfile $Logfile -Message "jobs finished; job.State=$($job.State)"
+$jobLog.Output("jobs finished; job.State=$($job.State)")
 Write-Output "Waiting for jobs to finish"
 $job | Wait-Job | Remove-Job -Force
 Write-Output "Jobs complete."

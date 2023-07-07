@@ -1,4 +1,4 @@
-using module '../PSJobLogger/PSJobLogger.psd1'
+using module '../PSJobLogger'
 using namespace System.Collections.Concurrent
 
 InModuleScope PSJobLogger {
@@ -96,6 +96,15 @@ InModuleScope PSJobLogger {
                 $logger.Output('foo')
                 $successTable.Count | Should -Be 1
                 $successTable[0] | Should -Be 'foo'
+            }
+            It 'flushes' {
+                $successTable = $logger.MessageTables.$([PSJobLogger]::StreamSuccess)
+                $successTable.Count | Should -Be 0
+                $logger.Output('foo')
+                $successTable.Count | Should -Be 1
+                $successTable[0] | Should -Be 'foo'
+                $logger.FlushStreams()
+                $successTable.Count | Should -Be 0
             }
         }
     }

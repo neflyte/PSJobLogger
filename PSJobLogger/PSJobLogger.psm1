@@ -75,7 +75,7 @@ class PSJobLogger {
     [void]
     SetLogfile([String]$Logfile) {
         if (-not(Test-Path $Logfile)) {
-            New-Item $Logfile -ItemType File -Force
+            $null = New-Item $Logfile -ItemType File -Force
         }
         $this.Logfile = $Logfile
     }
@@ -83,8 +83,8 @@ class PSJobLogger {
     [void]
     Logtofile([String]$Message) {
         if ($this.Logfile -ne '') {
-            $timestamp = Get-Date -Format FileDateTimeUniversal
-            Out-File -FilePath $this.Logfile -Append -InputObject "${timestamp} ${Message}"
+            $timestamp = Get-Date -Format FileDateTimeUniversal -ErrorAction SilentlyContinue
+            "${timestamp} ${Message}" | Out-File -FilePath $this.Logfile -Append -ErrorAction SilentlyContinue
         }
     }
 
@@ -120,7 +120,11 @@ class PSJobLogger {
 
     [void]
     EnqueueMessage([int]$Stream, [String]$Message) {
-        $($this.MessageTables.$Stream).Enqueue($Message)
+        [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
+        if ($null -ne $messageQueue) {
+            $messageQueue.Enqueue($Message)
+            $this.Logtofile("$($this.Prefix)$([PSJobLogger]::LogStreams.$Stream): ${Message}")
+        }
     }
 
     [void]
@@ -128,20 +132,24 @@ class PSJobLogger {
         if ($null -eq $ArgumentMap) {
             return
         }
-        $argumentMapString = $ArgumentMap.Keys | ForEach-Object { "$_=($($ArgumentMap.$_))" } | Join-String -Separator ';'
-        $this.Logtofile("Progress(Id=${Id}; ArgumentMap=${argumentMapString})")
+        $argumentMapString = $ArgumentMap.Keys | ForEach-Object { "$_=$($ArgumentMap.$_)" } | Join-String -Separator ';'
+        $this.Debug("Progress(Id=${Id}; ArgumentMap=[${argumentMapString}])")
         [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $this.MessageTables.$([PSJobLogger]::StreamProgress)
         if (-not($progressTable.ContainsKey($Id))) {
             $progressTable.$Id = [ConcurrentDictionary[String, PSObject]]::new()
         }
         $progressArgs = $progressTable.$Id
-        foreach ($argumentKey in $ArgumentMap.Keys) {
-            if ($null -eq $ArgumentMap.$argumentKey) {
-                $null = $progressArgs.Remove($argumentKey)
+        $argsBefore = $progressArgs.Keys | ForEach-Object { "$_=$($progressArgs.$_)" } | Join-String -Separator ';'
+        $this.Debug("Progress(${Id}): args before: ${argsBefore}")
+        $ArgumentMap.Keys | ForEach-Object {
+            if ($null -eq $ArgumentMap.$_) {
+                $null = $progressArgs.Remove($_)
                 continue
             }
-            $progressArgs.$argumentKey = $ArgumentMap.$argumentKey
+            $progressArgs.$_ = $ArgumentMap.$_
         }
+        $argsAfter = $progressArgs.Keys | ForEach-Object { "$($_)=$($progressArgs.$_)" } | Join-String -Separator ';'
+        $this.Debug("Progress(${Id}): args after: ${argsAfter}")
     }
 
     [void]
@@ -154,34 +162,30 @@ class PSJobLogger {
     [void]
     FlushProgressStream() {
         [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue = $this.MessageTables.$([PSJobLogger]::StreamProgress)
-        $this.Logtofile("+++ FlushProgressStream(): progressQueue: Keys.Count=$($progressQueue.Keys.Count)")
+        $this.Debug("FlushProgressStream(): progressQueue.Keys.Count=$($progressQueue.Keys.Count)")
         # write progress records
         foreach ($recordKey in $progressQueue.Keys) {
             if ($null -eq $progressQueue.$recordKey) {
-                $this.Logtofile("+++ FlushProgressStream(): no queue record for ${recordKey}; skipping it")
+                $this.Debug("FlushProgressStream(): no queue record for ${recordKey}; skipping it")
                 continue
             }
             $progressArgs = $progressQueue.$recordKey
             $argsString = $progressArgs.Keys | ForEach-Object { "$($_)=$($progressArgs.$_)" } | Join-String -Separator ';'
-            $this.Logtofile("Progress: ${recordKey} -> ${argsString}")
+            $this.Debug("FlushProgressStream(): processing key ${recordKey} = ${argsString}")
             if ($null -eq $progressArgs.Id -or $null -eq $progressArgs.Activity -or $progressArgs.Activity -eq '') {
-                $this.Logtofile("Warning: skipping ${recordKey} because Id or Activity keys were null or missing")
-                $this.Warning("skipping ${recordKey} because Id or Activity keys were null or missing")
+                $this.Warning("FlushProgressStream(): skipping ${recordKey} because Id or Activity keys were null or missing")
                 continue
             }
             $progressError = $null
             Write-Progress @progressArgs -ErrorAction SilentlyContinue -ErrorVariable progressError
-            if ($null -ne $progressError) {
-                $progressError | ForEach-Object {
-                    $this.Logtofile("Error (Progress): $($_)")
-                    $this.Error($_)
-                }
+            if ($progressError) {
+                $progressError | ForEach-Object { $this.Error($_) }
             }
             # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
             if ($null -ne $progressArgs.Completed -and [Boolean]$progressArgs.Completed) {
-                $this.Logtofile("Progress: removing progress stream record ${recordKey}")
+                $this.Debug("FlushProgressStream(): removing progress stream record ${recordKey}")
                 if (-not($progressQueue.TryRemove($recordKey, [ref]@{}))) {
-                    $this.Logtofile("Error: failed to remove progress stream record ${recordKey}")
+                    $this.Error("FlushProgressStream(): failed to remove progress stream record ${recordKey}")
                 }
             }
         }
@@ -192,88 +196,67 @@ class PSJobLogger {
         if ($null -eq $this.MessageTables.$Stream) {
             return
         }
-        # The Progress stream is handled elsewhere since it is different
+        # The Progress stream is handled elsewhere since it contains a different type of data
         if ($Stream -eq [PSJobLogger]::StreamProgress) {
             $this.FlushProgressStream()
             return
         }
         $streamLabel = [PSJobLogger]::LogStreams.$Stream
-        # Handle the remaining streams
+        # Handle the rest of the streams
         [String[]]$messages = @()
         [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
         $dequeuedMessage = ''
         while ($messageQueue.Count -gt 0) {
             if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
-                $this.Logtofile("Error: unable to dequeue message from ${streamLabel}; queue count = $($messageQueue.Count)")
-                $this.Error("unable to dequeue message from ${streamLabel}; queue count = $($messageQueue.Count)")
+                $this.Error("FlushOneStream(): unable to dequeue message from ${streamLabel}; queue count = $($messageQueue.Count)")
                 break
             }
             $messages += @($dequeuedMessage)
         }
-        $messageTimestamp = Get-Date -Format FileDateTimeUniversal
         # write messages to the desired stream
         foreach ($message in $messages) {
-            $messageWithPrefix = "${messageTimestamp} $( $this.Prefix )${streamLabel}: ${message}"
-            $this.Logtofile($messageWithPrefix)
+            $messageWithPrefix = "$( $this.Prefix )${streamLabel}: ${message}"
             switch ($Stream) {
                 ([PSJobLogger]::StreamSuccess) {
                     $outputError = $null
-                    Write-Output -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
+                    $null = Write-Output -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
                     if ($outputError) {
-                        $outputError | ForEach-Object {
-                            $this.Logtofile("Error (Success): $_")
-                            $this.Error($_)
-                        }
+                        $outputError | ForEach-Object { $this.Error($_) }
                     }
                 }
                 ([PSJobLogger]::StreamError) {
                     $errorstreamError = $null
-                    Write-Error -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
+                    Write-Error -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
                     if ($errorstreamError) {
-                        $errorstreamError | ForEach-Object {
-                            $this.Logtofile("Error (Error): $_")
-                            $this.Error($_)
-                        }
+                        $errorstreamError | ForEach-Object { $this.Error($_) }
                     }
                 }
                 ([PSJobLogger]::StreamWarning) {
                     $warningError = $null
-                    Write-Warning -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
+                    Write-Warning -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
                     if ($warningError) {
-                        $warningError | ForEach-Object {
-                            $this.Logtofile("Error (Warning): $_")
-                            $this.Error($_)
-                        }
+                        $warningError | ForEach-Object { $this.Error($_) }
                     }
                 }
                 ([PSJobLogger]::StreamVerbose) {
                     $verboseError = $null
-                    Write-Verbose -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
+                    Write-Verbose -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
                     if ($verboseError) {
-                        $verboseError | ForEach-Object {
-                            $this.Logtofile("Error (Verbose): $_")
-                            $this.Error($_)
-                        }
+                        $verboseError | ForEach-Object { $this.Error($_) }
                     }
                 }
                 ([PSJobLogger]::StreamDebug) {
                     $debugError = $null
-                    Write-Debug -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
+                    Write-Debug -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
                     if ($debugError) {
-                        $debugError | ForEach-Object {
-                            $this.Logtofile("Error (Debug): $_")
-                            $this.Error($_)
-                        }
+                        $debugError | ForEach-Object { $this.Error($_) }
                     }
                 }
                 ([PSJobLogger]::StreamInformation) {
                     $informationError = $null
-                    Write-Information -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
+                    Write-Information -MessageData $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
                     if ($informationError) {
-                        $informationError | ForEach-Object {
-                            $this.Logtofile("Error (Information): $_")
-                            $this.Error($_)
-                        }
+                        $informationError | ForEach-Object { $this.Error($_) }
                     }
                 }
                 ([PSJobLogger]::StreamProgress) {
@@ -281,8 +264,7 @@ class PSJobLogger {
                     continue
                 }
                 default {
-                    $this.Logtofile("Error: $( $this.Prefix )unexpected stream ${Stream}")
-                    Write-Error "$( $this.Prefix )unexpected stream ${Stream}"
+                    $this.Error("FlushOneStream(): unexpected stream ${Stream}")
                     return
                 }
             }
