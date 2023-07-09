@@ -4,6 +4,8 @@ task Lint {
 }
 
 task Test {
+    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    Import-Module ./PSJobLogger -Force
     Invoke-Pester
 }
 
@@ -15,7 +17,7 @@ task Build-Manifest {
         Copyright = '(c) 2023 Alexander W Lew. All Rights Reserved.'
         CompanyName = 'Alan Lew'
         RootModule = 'PSJobLogger.psm1'
-        ModuleVersion = '0.1.0'
+        ModuleVersion = '0.3.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.0'
         FunctionsToExport = @('Initialize-PSJobLogger')

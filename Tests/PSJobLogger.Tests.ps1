@@ -4,11 +4,13 @@ using namespace System.Collections.Concurrent
 InModuleScope PSJobLogger {
     Describe 'PSJobLogger' {
         BeforeAll {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
             $LoggerName = 'PSJobLogger-test'
         }
 
         BeforeEach {
-            $logger = [PSJobLogger]::new($LoggerName)
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
+            $logger = [PSJobLogger]::new($LoggerName, '')
         }
 
         Context 'constructor' {
@@ -20,7 +22,7 @@ InModuleScope PSJobLogger {
                 $logger.MessageTables.Keys.Count | Should -Be $([PSJobLogger]::LogStreams).Count
                 $logger.MessageTables.Keys | ForEach-Object {
                     if ($_ -eq [PSJobLogger]::StreamProgress) {
-                        [ConcurrentDictionary[String, Hashtable]]$progressTable = $logger.MessageTables.$_
+                        [ConcurrentDictionary[String, PSObject]]$progressTable = $logger.MessageTables.$_
                         $progressTable.Count | Should -Be 0
                         continue
                     }
