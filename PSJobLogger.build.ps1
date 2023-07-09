@@ -32,3 +32,10 @@ task Build-Manifest {
     }
     $null = New-ModuleManifest @manifestArgs
 }
+
+task Mp3test {
+    Remove-Item ./hack/test.log -Force -ErrorAction SilentlyContinue
+    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    Import-Module ./PSJobLogger
+    ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile ./hack/test.log
+}

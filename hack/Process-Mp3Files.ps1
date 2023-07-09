@@ -1,10 +1,10 @@
+#requires -modules PSJobLogger
 [CmdletBinding()]
 param(
     [String]$Directory = $PWD,
     [String]$Logfile,
     [int]$Threads = 4
 )
-Import-Module '../PSJobLogger' -Force
 if ($Threads -lt 1) {
     Write-Error "must use at least one thread"
     exit
@@ -30,20 +30,25 @@ $mp3Files | ForEach-Object {
     $counter++
 }
 Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads"
+$mp3gainDefaultArgs = @('-e', '-r', '-c', '-k')
 $jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile
+Write-Progress -Id 0 -Activity 'Processing' -Status 'Starting jobs'
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
     $log = $using:jobLog
+    $mp3gainDefaultArgs = $using:mp3gainDefaultArgs
+    $DebugPreference = $using:DebugPreference
+    $VerbosePreference = $using:VerbosePreference
 
     $id = $_.Id
     $name = $_.Name
     $fullName = $_.FullName
-    $mp3gainArgs = @('-e', '-r', '-c', '-k', $fullName)
-    Write-Debug "mp3gain ${mp3gainArgs} 2>&1"
+    $mp3gainArgs = @() + $mp3gainDefaultArgs + @($fullName)
+    $log.Debug("mp3gain ${mp3gainArgs} 2>&1")
     try {
         $ErrorActionPreference = 'SilentlyContinue'
         mp3gain $mp3gainArgs 2>&1 | ForEach-Object {
             if ($_ -match '([0-9]+)% of ([0-9]+) bytes analyzed') {
-                $log.Progress($fullName, @{ 
+                $log.Progress($fullName, @{
                     Id = $id
                     Activity = $name
                     PercentComplete = [int]$Matches[1]
@@ -51,8 +56,6 @@ $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel
                 })
             }
         }
-    } catch {
-        throw $_
     } finally {
         $log.Progress($fullName, @{ Completed = $true })
     }
@@ -73,9 +76,7 @@ Write-Progress -Id 0 -Activity 'Processing' -Completed
 Write-Output "Waiting for jobs to finish"
 $null = $job | Wait-Job
 Write-Output "Job output:"
-$job | Receive-Job
+$job | Receive-Job -AutoRemoveJob
 Write-Output "---"
-Write-Output "Cleaning up jobs"
-$job | Remove-Job -Force
 # all done.
 Write-Output 'done.'

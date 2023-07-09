@@ -10,7 +10,7 @@ InModuleScope PSJobLogger {
 
         BeforeEach {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
-            $logger = [PSJobLogger]::new($LoggerName, '')
+            $logger = [PSJobLogger]::new($LoggerName, '', $true)
         }
 
         Context 'constructor' {
@@ -19,6 +19,7 @@ InModuleScope PSJobLogger {
                 $logger.Name | Should -BeExactly $LoggerName
                 $logger.Prefix | Should -BeExactly "${LoggerName}: "
                 $logger.Initialized | Should -BeTrue
+                $logger.UseQueues | Should -BeTrue
                 $logger.MessageTables.Keys.Count | Should -Be $([PSJobLogger]::LogStreams).Count
                 $logger.MessageTables.Keys | ForEach-Object {
                     if ($_ -eq [PSJobLogger]::StreamProgress) {
