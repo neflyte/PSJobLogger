@@ -11,6 +11,12 @@ task Test {
     Invoke-Pester
 }
 
+task Install-Dependencies {
+    @('Pester','PSScriptAnalyzer') | ForEach-Object {
+        Install-Module $_ -Force
+    }
+}
+
 task Build-Manifest {
     $manifestArgs = @{
         Path = './PSJobLogger/PSJobLogger.psd1'
@@ -19,7 +25,7 @@ task Build-Manifest {
         Copyright = '(c) 2023 Alexander W Lew. All Rights Reserved.'
         CompanyName = 'Alan Lew'
         RootModule = 'PSJobLogger.psm1'
-        ModuleVersion = '0.3.0'
+        ModuleVersion = '0.4.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.0'
         ScriptsToProcess = 'DictLogger.ps1'
@@ -65,5 +71,5 @@ task Mp3test {
     Remove-Item ./hack/test.log -Force -ErrorAction SilentlyContinue
     Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
     Import-Module ./PSJobLogger -Force
-    ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile ./hack/test.log
+    ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music -Logfile ./hack/test.log
 }

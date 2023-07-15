@@ -1,6 +1,8 @@
 using namespace System.Collections
 using namespace System.Collections.Concurrent
 
+Import-Module ../PSJobLogger -Force
+
 Describe 'DictLogger' {
     BeforeAll {
         [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
