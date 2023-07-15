@@ -87,5 +87,14 @@ fabric.properties
 # IDEA project files
 *.iml
 
+# IDEA Settings
+.idea/
+
 # VSCode files
 .vscode/
+
+# Log files from testing
+hack/*.Log
+
+# Module manifest
+PSJobLogger/PSJobLogger.psd1

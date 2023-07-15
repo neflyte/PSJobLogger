@@ -1,6 +1,30 @@
 using namespace System.Collections
 using namespace System.Collections.Concurrent
 
+$setVariableOpts = @{
+    Option = 'Constant'
+    Scope = 'Global'
+    ErrorAction = 'SilentlyContinue'
+}
+Set-Variable PSJobLoggerStreamSuccess @setVariableOpts -Value ([int]0)
+Set-Variable PSJobLoggerStreamError @setVariableOpts -Value ([int]1)
+Set-Variable PSJobLoggerStreamWarning @setVariableOpts -Value ([int]2)
+Set-Variable PSJobLoggerStreamVerbose @setVariableOpts -Value ([int]3)
+Set-Variable PSJobLoggerStreamDebug @setVariableOpts -Value ([int]4)
+Set-Variable PSJobLoggerStreamInformation @setVariableOpts -Value ([int]5)
+Set-Variable PSJobLoggerStreamProgress @setVariableOpts -Value ([int]6)
+Set-Variable PSJobLoggerLogStreams @setVariableOpts -Value @{
+    $PSJobLoggerStreamSuccess = 'Success'
+    $PSJobLoggerStreamError = 'Error'
+    $PSJobLoggerStreamWarning = 'Warning'
+    $PSJobLoggerStreamVerbose = 'Verbose'
+    $PSJobLoggerStreamDebug = 'Debug'
+    $PSJobLoggerStreamInformation = 'Information'
+    $PSJobLoggerStreamProgress = 'Progress'
+}
+
+# Fixed by: https://github.com/PowerShell/PowerShell/pull/18138
+#[NoRunspaceAffinity()]
 class PSJobLogger {
     <#
     Constant values used as an output stream identifier
@@ -15,30 +39,38 @@ class PSJobLogger {
     <#
     A list of available output streams
     #>
-    static [int[]]$LogStreams = @(
-        [PSJobLogger]::StreamSuccess,
-        [PSJobLogger]::StreamError,
-        [PSJobLogger]::StreamWarning,
-        [PSJobLogger]::StreamVerbose,
-        [PSJobLogger]::StreamDebug,
-        [PSJobLogger]::StreamInformation,
-        [PSJobLogger]::StreamProgress
-    )
+    static [Hashtable]$LogStreams = @{
+        [PSJobLogger]::StreamSuccess = 'Success';
+        [PSJobLogger]::StreamError = 'Error';
+        [PSJobLogger]::StreamWarning = 'Warning';
+        [PSJobLogger]::StreamVerbose = 'Verbose';
+        [PSJobLogger]::StreamDebug = 'Debug';
+        [PSJobLogger]::StreamInformation = 'Information';
+        [PSJobLogger]::StreamProgress = 'Progress'
+    }
 
     # The name of the logger; used to construct a "prefix" that is prepended to each message
-    [String]$Name
+    [String]$Name = ''
     # A thread-safe dictionary that holds thread-safe collections for each output stream
     [ConcurrentDictionary[int, ICollection]]$MessageTables
     # The logger prefix string; it is prepended to each message
-    [String]$Prefix
+    [String]$Prefix = ''
     # Indicates that the class has been initialized and should not be initialized again
     [Boolean]$Initialized = $false
+    # The file in which to additionally log all messages
+    [String]$Logfile = ''
+    # Indicates that message queues should be used
+    [Boolean]$UseQueues = $false
 
-    PSJobLogger([String]$Name = 'PSJobLogger') {
+    PSJobLogger([String]$Name = 'PSJobLogger', [String]$Logfile = '', [Switch]$UseQueues = $false) {
         $this.SetName($Name)
         if ($Name -eq '') {
             $this.SetName('PSJobLogger')
         }
+        if ($Logfile -ne '') {
+            $this.SetLogfile($Logfile)
+        }
+        $this.UseQueues = $UseQueues
         $this.initializeMessageTables()
     }
 
@@ -48,12 +80,17 @@ class PSJobLogger {
             return
         }
         $this.MessageTables = [ConcurrentDictionary[int, ICollection]]::new()
-        foreach ($stream in [PSJobLogger]::LogStreams) {
-            if ($stream -eq [PSJobLogger]::StreamProgress) {
-                $this.MessageTables.$stream = [ConcurrentDictionary[String, Hashtable]]::new()
-                continue
+        foreach ($stream in [PSJobLogger]::LogStreams.Keys) {
+            switch ($stream) {
+                ([PSJobLogger]::StreamProgress) {
+                    $this.MessageTables.$stream = [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new()
+                }
+                default {
+                    if ($this.UseQueues) {
+                        $this.MessageTables.$stream = [ConcurrentQueue[String]]::new()
+                    }
+                }
             }
-            $this.MessageTables.$stream = [ConcurrentQueue[String]]::new()
         }
         $this.Initialized = $true
     }
@@ -62,6 +99,22 @@ class PSJobLogger {
     SetName([String]$Name) {
         $this.Name = $Name
         $this.Prefix = "${Name}: "
+    }
+
+    [void]
+    SetLogfile([String]$Logfile) {
+        if (-not(Test-Path $Logfile)) {
+            $null = New-Item $Logfile -ItemType File -Force
+        }
+        $this.Logfile = $Logfile
+    }
+
+    [void]
+    Logtofile([String]$Message) {
+        if ($this.Logfile -ne '') {
+            $timestamp = Get-Date -Format FileDateTimeUniversal -ErrorAction Continue
+            "${timestamp} ${Message}" | Out-File -FilePath $this.Logfile -Append -ErrorAction Continue
+        }
     }
 
     [void]
@@ -96,56 +149,75 @@ class PSJobLogger {
 
     [void]
     EnqueueMessage([int]$Stream, [String]$Message) {
-        [ConcurrentQueue[String]]$messageTable = $this.MessageTables.$Stream
-        $messageTable.Enqueue($Message)
+        # Log the message to a logfile if one is defined
+        $this.Logtofile("$($this.Prefix)$([PSJobLogger]::LogStreams.$Stream): ${Message}")
+        # Add the message to the desired queue if desired
+        if ($this.UseQueues) {
+            [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
+            if ($null -ne $messageQueue) {
+                $messageQueue.Enqueue($Message)
+            }
+            return
+        }
+        # Write the message to the appropriate stream
+        $this.FlushMessages($Stream, @($Message))
     }
 
     [void]
     Progress([String]$Id, [Hashtable]$ArgumentMap) {
-        [ConcurrentDictionary[String, Hashtable]]$progressTable = $this.MessageTables.$([PSJobLogger]::StreamProgress)
-        if ($null -eq $progressTable.$Id) {
-            $progressTable.$Id = @{ }
+        if ($null -eq $ArgumentMap) {
+            return
         }
-        $progressArgs = $progressTable.$Id
-        foreach ($argumentKey in $ArgumentMap.Keys) {
-            if ($null -eq $ArgumentMap.$argumentKey) {
-                $progressArgs.Remove($argumentKey)
+        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $this.MessageTables.$([PSJobLogger]::StreamProgress)
+        if (-not($progressTable.ContainsKey($Id))) {
+            if (-not($progressTable.TryAdd($Id, [ConcurrentDictionary[String, PSObject]]::new()))) {
+                Write-Error "unable to add new key for ${Id}"
+            }
+        }
+        [ConcurrentDictionary[String, PSObject]]$progressArgs = $progressTable.$Id
+        foreach ($key in $ArgumentMap.Keys) {
+            if ($null -eq $ArgumentMap.$key) {
+                [PSObject]$removedValue = $null
+                if (-not($progressArgs.TryRemove($key, [ref]$removedValue))) {
+                    Write-Error "could not remove key ${key} from progress arg map"
+                }
                 continue
             }
-            $progressArgs.$argumentKey = $ArgumentMap.$argumentKey
+            $progressArgs.$key = $ArgumentMap.$key
         }
     }
 
     [void]
     FlushStreams() {
-        foreach ($stream in [PSJobLogger]::LogStreams) {
+        foreach ($stream in [PSJobLogger]::LogStreams.Keys) {
             $this.FlushOneStream($stream)
         }
     }
 
     [void]
     FlushProgressStream() {
-        $progressRecords = @{}
-        [ConcurrentDictionary[String, Hashtable]]$progressQueue = $this.MessageTables.$([PSJobLogger]::StreamProgress)
-        foreach ($queueKey in $progressQueue.Keys) {
-            $progressRecords.$queueKey = @{} + $progressQueue.$queueKey
-        }
+        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue = $this.MessageTables.$([PSJobLogger]::StreamProgress)
         # write progress records
-        foreach ($recordKey in $progressRecords.Keys) {
-            if ($null -eq $progressRecords.$recordKey) {
+        foreach ($recordKey in $progressQueue.Keys) {
+            if ($null -eq $progressQueue.$recordKey) {
+                Write-Warning "FlushProgressStream(): no queue record for ${recordKey}; skipping it"
                 continue
             }
-            $progressArgs = $progressRecords.$recordKey
-            $progressError = $null
-            Write-Progress @progressArgs -ErrorAction SilentlyContinue -ErrorVariable progressError
-            if ($null -ne $progressError) {
-                $progressError | ForEach-Object {
-                    $this.Error($($_ | Out-String))
+            $progressArgs = $progressQueue.$recordKey
+            if ($null -ne $progressArgs.Id -and $null -ne $progressArgs.Activity -and $progressArgs.Activity -ne '') {
+                $progressError = $null
+                Write-Progress @progressArgs -ErrorAction SilentlyContinue -ErrorVariable progressError
+                if ($progressError) {
+                    foreach ($error in $progressError) {
+                        Write-Error $error
+                    }
                 }
             }
             # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
             if ($null -ne $progressArgs.Completed -and [Boolean]$progressArgs.Completed) {
-                $progressQueue.TryRemove($recordKey, [ref]@{})
+                if (-not($progressQueue.TryRemove($recordKey, [ref]@{}))) {
+                    Write-Error "FlushProgressStream(): failed to remove progress stream record ${recordKey}"
+                }
             }
         }
     }
@@ -155,104 +227,108 @@ class PSJobLogger {
         if ($null -eq $this.MessageTables.$Stream) {
             return
         }
-        # The Progress stream is handled elsewhere since it is different
-        if ($Stream -eq [PSJobLogger]::StreamProgress) {
+        # The Progress stream is handled elsewhere since it contains a different type of data
+        if ($Stream -eq [PSJobLogger]::StreamProgress -and $null -ne $this.MessageTables.$Stream) {
             $this.FlushProgressStream()
             return
         }
-        # Handle the remaining streams
+        if (-not($this.UseQueues)) {
+            return
+        }
+        # Drain the queue for the stream
         [String[]]$messages = @()
         [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
         $dequeuedMessage = ''
         while ($messageQueue.Count -gt 0) {
             if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
+                Write-Error "FlushOneStream(): unable to dequeue message from $([PSJobLogger]::LogStreams.$Stream); queue count = $($messageQueue.Count)"
                 break
             }
             $messages += @($dequeuedMessage)
         }
         # write messages to the desired stream
-        foreach ($message in $messages) {
-            $messageWithPrefix = "$( $this.Prefix )${message}"
+        $this.FlushMessages($Stream, $messages)
+    }
+
+    [void]
+    FlushMessages([int]$Stream, [String[]]$Messages) {
+        $streamLabel = [PSJobLogger]::LogStreams.$Stream
+        foreach ($message in $Messages) {
+            $messageWithPrefix = "$( $this.Prefix )${streamLabel}: ${message}"
             switch ($Stream) {
                 ([PSJobLogger]::StreamSuccess) {
                     $outputError = $null
-                    Write-Output $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
-                    if ($null -ne $outputError) {
-                        $outputError | ForEach-Object {
-                            $this.Error($($_ | Out-String))
-                        }
+                    $null = Write-Output -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
+                    if ($outputError) {
+                        $outputError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamError) {
                     $errorstreamError = $null
-                    Write-Error $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
-                    if ($null -ne $errorstreamError) {
-                        $errorstreamError | ForEach-Object {
-                            Write-Error ($_ | Out-String)
-                        }
+                    Write-Error -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
+                    if ($errorstreamError) {
+                        $errorstreamError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamWarning) {
                     $warningError = $null
-                    Write-Warning $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
-                    if ($null -ne $warningError) {
-                        $warningError | ForEach-Object {
-                            $this.Error($($_ | Out-String))
-                        }
+                    Write-Warning -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
+                    if ($warningError) {
+                        $warningError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamVerbose) {
                     $verboseError = $null
-                    Write-Verbose $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
-                    if ($null -ne $verboseError) {
-                        $verboseError | ForEach-Object {
-                            $this.Error($($_ | Out-String))
-                        }
+                    Write-Verbose -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
+                    if ($verboseError) {
+                        $verboseError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamDebug) {
                     $debugError = $null
-                    Write-Debug $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
-                    if ($null -ne $debugError) {
-                        $debugError | ForEach-Object {
-                            $this.Error($($_ | Out-String))
-                        }
+                    Write-Debug -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
+                    if ($debugError) {
+                        $debugError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamInformation) {
                     $informationError = $null
-                    Write-Information $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
-                    if ($null -ne $informationError) {
-                        $informationError | ForEach-Object {
-                            $this.Error($($_ | Out-String))
-                        }
+                    Write-Information -MessageData $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
+                    if ($informationError) {
+                        $informationError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamProgress) {
                     # This should never be reached, but it's here just in case.
-                    continue
                 }
                 default {
-                    Write-Error "$( $this.Prefix )unexpected stream ${Stream}"
-                    return
+                    Write-Error "FlushMessages(): unexpected stream ${Stream}"
                 }
             }
         }
     }
 }
 
+
 <#
 .SYNOPSIS
     Return a newly-initialized PSJobLogger class
 .PARAMETER Name
     The name of the logger; defaults to 'PSJobLogger'
+.PARAMETER Logfile
+    The path and name of a file in which to write log messages (optional)
+.PARAMETER UseQueues
+    Indicates that messages should be added to queues for each output stream;
+    defaults to $false (optional)
 .EXAMPLE
-    PS> $jobLog = Initialize-PSJobLogger -Name MyLogger
+    PS> $jobLog = Initialize-PSJobLogger -Name MyLogger -Logfile messages.log
 #>
 function Initialize-PSJobLogger {
     [OutputType([PSJobLogger])]
     param(
-        [String]$Name = 'PSJobLogger'
+        [String]$Name = 'PSJobLogger',
+        [String]$Logfile = '',
+        [Switch]$UseQueues
     )
-    return [PSJobLogger]::new($Name)
+    return [PSJobLogger]::new($Name, $Logfile, $UseQueues)
 }

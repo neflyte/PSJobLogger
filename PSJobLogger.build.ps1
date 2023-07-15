@@ -1,4 +1,8 @@
 #requires -modules InvokeBuild
+task Clean {
+    Remove-Item PSJobLogger/PSJobLogger.psd1 -Force -ErrorAction SilentlyContinue
+}
+
 task Lint {
     Invoke-ScriptAnalyzer -Path ./PSJobLogger -Settings ./PSScriptAnalyzerSettings.psd1
 }
@@ -15,18 +19,51 @@ task Build-Manifest {
         Copyright = '(c) 2023 Alexander W Lew. All Rights Reserved.'
         CompanyName = 'Alan Lew'
         RootModule = 'PSJobLogger.psm1'
-        ModuleVersion = '0.1.0'
+        ModuleVersion = '0.3.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.0'
-        FunctionsToExport = @('Initialize-PSJobLogger')
+        ScriptsToProcess = 'DictLogger.ps1'
+        FunctionsToExport = @(
+            'Initialize-PSJobLogger',
+            'Initialize-PSJobLoggerDict',
+            'Write-MessageToLogfile',
+            'Add-LogMessageToQueue',
+            'Write-LogOutput',
+            'Write-LogError',
+            'Write-LogWarning',
+            'Write-LogVerbose',
+            'Write-LogDebug',
+            'Write-LogInformation',
+            'Write-LogProgress',
+            'Show-LogProgress',
+            'Show-LogFromOneStream',
+            'Show-Log',
+            'Write-LogMessagesToStream'
+        )
         CmdletsToExport = @()
         AliasesToExport = @()
-        VariablesToExport = @()
-        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1'
+        VariablesToExport = @(
+            'PSJobLoggerStreamSuccess',
+            'PSJobLoggerStreamError',
+            'PSJobLoggerStreamWarning',
+            'PSJobLoggerStreamVerbose',
+            'PSJobLoggerStreamDebug',
+            'PSJobLoggerStreamInformation',
+            'PSJobLoggerStreamProgress',
+            'PSJobLoggerLogStreams'
+        )
+        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.ps1'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
         ProjectUri = 'https://github.com/neflyte/PSJobLogger'
         LicenseUri = 'https://github.com/neflyte/PSJobLogger/blob/main/LICENSE'
         ReleaseNotes = 'https://github.com/neflyte/PSJobLogger/blob/main/CHANGELOG.md'
     }
     $null = New-ModuleManifest @manifestArgs
+}
+
+task Mp3test {
+    Remove-Item ./hack/test.log -Force -ErrorAction SilentlyContinue
+    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    Import-Module ./PSJobLogger -Force
+    ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile ./hack/test.log
 }
