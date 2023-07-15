@@ -31,9 +31,11 @@ $mp3Files | ForEach-Object {
 }
 Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads"
 $mp3gainDefaultArgs = @('-e', '-r', '-c', '-k')
-$jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile
+$jobLog = Initialize-PSJobLoggerDict -Name 'Process-Mp3Files' -Logfile $Logfile
 Write-Progress -Id 0 -Activity 'Processing' -Status 'Starting jobs'
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
+    Import-Module ../PSJobLogger -Force
+
     $log = $using:jobLog
     $mp3gainDefaultArgs = $using:mp3gainDefaultArgs
     $DebugPreference = $using:DebugPreference
@@ -43,21 +45,30 @@ $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel
     $name = $_.Name
     $fullName = $_.FullName
     $mp3gainArgs = @() + $mp3gainDefaultArgs + @($fullName)
-    $log.Debug("mp3gain ${mp3gainArgs} 2>&1")
+    Write-LogDebug -LogDict $log -Message "mp3gain ${mp3gainArgs} 2>&1"
     try {
         $ErrorActionPreference = 'SilentlyContinue'
         mp3gain $mp3gainArgs 2>&1 | ForEach-Object {
             if ($_ -match '([0-9]+)% of ([0-9]+) bytes analyzed') {
-                $log.Progress($fullName, @{
+                Write-LogProgress -LogDict $log -Id $fullName -ArgumentMap @{
                     Id = $id
                     Activity = $name
                     PercentComplete = [int]$Matches[1]
                     Status = "Analyzing $($Matches[2]) bytes"
-                })
+                }
+            }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Write-LogError -LogDict $log "mp3gain exited with code ${LASTEXITCODE}"
+            Write-LogProgress -LogDict $log -Id $fullName -ArgumentMap @{
+                Id = $id
+                Activity = $name
+                PercentComplete = 100
+                Status = 'ERROR'
             }
         }
     } finally {
-        $log.Progress($fullName, @{ Completed = $true })
+        Write-LogProgress -LogDict $log -Id $fullName -ArgumentMap @{ Completed = $true }
     }
 }
 while ($job.State -eq 'Running') {
@@ -66,17 +77,17 @@ while ($job.State -eq 'Running') {
     $finishedJobs = ($job.ChildJobs | Where-Object State -EQ 'Completed').Count
     Write-Progress -Id 0 -Activity 'Processing' -Status "${finishedJobs}/${childJobCount} files" -PercentComplete (($finishedJobs / $childJobCount) * 100)
     # flush progress stream
-    $jobLog.FlushProgressStream()
+    Show-LogProgress -LogDict $jobLog
     # small sleep to not overload the ui
     Start-Sleep -Seconds 0.25
 }
 # flush any remaining logs
-$jobLog.FlushProgressStream()
+Show-LogProgress -LogDict $jobLog
+# dismiss the parent progress bar
 Write-Progress -Id 0 -Activity 'Processing' -Completed
-Write-Output "Waiting for jobs to finish"
-$null = $job | Wait-Job
+# show job output
 Write-Output "Job output:"
-$job | Receive-Job -AutoRemoveJob
+Receive-Job -Job $job -Wait -AutoRemoveJob
 Write-Output "---"
 # all done.
 Write-Output 'done.'

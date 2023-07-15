@@ -1,6 +1,28 @@
 using namespace System.Collections
 using namespace System.Collections.Concurrent
 
+$setVariableOpts = @{
+    Option = 'Constant'
+    Scope = 'Global'
+    ErrorAction = 'SilentlyContinue'
+}
+Set-Variable PSJobLoggerStreamSuccess @setVariableOpts -Value ([int]0)
+Set-Variable PSJobLoggerStreamError @setVariableOpts -Value ([int]1)
+Set-Variable PSJobLoggerStreamWarning @setVariableOpts -Value ([int]2)
+Set-Variable PSJobLoggerStreamVerbose @setVariableOpts -Value ([int]3)
+Set-Variable PSJobLoggerStreamDebug @setVariableOpts -Value ([int]4)
+Set-Variable PSJobLoggerStreamInformation @setVariableOpts -Value ([int]5)
+Set-Variable PSJobLoggerStreamProgress @setVariableOpts -Value ([int]6)
+Set-Variable PSJobLoggerLogStreams @setVariableOpts -Value @{
+    $PSJobLoggerStreamSuccess = 'Success'
+    $PSJobLoggerStreamError = 'Error'
+    $PSJobLoggerStreamWarning = 'Warning'
+    $PSJobLoggerStreamVerbose = 'Verbose'
+    $PSJobLoggerStreamDebug = 'Debug'
+    $PSJobLoggerStreamInformation = 'Information'
+    $PSJobLoggerStreamProgress = 'Progress'
+}
+
 # Fixed by: https://github.com/PowerShell/PowerShell/pull/18138
 #[NoRunspaceAffinity()]
 class PSJobLogger {
