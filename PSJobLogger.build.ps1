@@ -64,6 +64,6 @@ task Build-Manifest {
 task Mp3test {
     Remove-Item ./hack/test.log -Force -ErrorAction SilentlyContinue
     Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-    Import-Module ./PSJobLogger
+    Import-Module ./PSJobLogger -Force
     ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile ./hack/test.log
 }

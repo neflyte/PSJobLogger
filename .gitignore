@@ -95,3 +95,6 @@ fabric.properties
 
 # Log files from testing
 hack/*.Log
+
+# Module manifest
+PSJobLogger/PSJobLogger.psd1
