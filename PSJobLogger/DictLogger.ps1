@@ -6,7 +6,8 @@ function Initialize-PSJobLoggerDict {
     param(
         [String]$Name = 'PSJobLogger',
         [String]$Logfile = '',
-        [Switch]$UseQueues
+        [Switch]$UseQueues,
+        [int]$ProgressParentId = -1
     )
     [ConcurrentDictionary[String, PSObject]]$logDict = [ConcurrentDictionary[String, PSObject]]::new()
     $null = $logDict.TryAdd('Name', $Name)
@@ -18,6 +19,7 @@ function Initialize-PSJobLoggerDict {
     }
     $null = $logDict.TryAdd('Logfile', $Logfile)
     $null = $logDict.TryAdd('UseQueues', $UseQueues)
+    $null = $logDict.TryAdd('ProgressParentId', $ProgressParentId)
     $streams = [ConcurrentDictionary[int, ICollection]]::new()
     foreach ($stream in $PSJobLoggerLogStreams.Keys) {
         switch ($stream) {
@@ -133,6 +135,14 @@ function Write-LogProgress {
             continue
         }
         $progressArgs.$key = $ArgumentMap.$key
+    }
+    $progressParentId = $LogDict.ProgressParentId
+    if ($progressParentId -ge 0) {
+        if (-not($progressArgs.ContainsKey('ParentId'))) {
+            $null = $progressArgs.TryAdd('ParentId', $progressParentId)
+        } else {
+            $progressArgs.ParentId = $progressParentId
+        }
     }
 }
 

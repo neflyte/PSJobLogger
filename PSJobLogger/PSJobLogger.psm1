@@ -52,7 +52,7 @@ class PSJobLogger {
     # The name of the logger; used to construct a "prefix" that is prepended to each message
     [String]$Name = ''
     # A thread-safe dictionary that holds thread-safe collections for each output stream
-    [ConcurrentDictionary[int, ICollection]]$MessageTables
+    [ConcurrentDictionary[int, ICollection]]$Streams
     # The logger prefix string; it is prepended to each message
     [String]$Prefix = ''
     # Indicates that the class has been initialized and should not be initialized again
@@ -61,8 +61,15 @@ class PSJobLogger {
     [String]$Logfile = ''
     # Indicates that message queues should be used
     [Boolean]$UseQueues = $false
+    # Contains the Id of the parent Progress bar
+    [int]$ProgressParentId = -1
 
-    PSJobLogger([String]$Name = 'PSJobLogger', [String]$Logfile = '', [Switch]$UseQueues = $false) {
+    PSJobLogger(
+        [String]$Name = 'PSJobLogger',
+        [String]$Logfile = '',
+        [Switch]$UseQueues = $false,
+        [int]$ProgressParentId = -1
+    ) {
         $this.SetName($Name)
         if ($Name -eq '') {
             $this.SetName('PSJobLogger')
@@ -71,28 +78,27 @@ class PSJobLogger {
             $this.SetLogfile($Logfile)
         }
         $this.UseQueues = $UseQueues
-        $this.initializeMessageTables()
-    }
-
-    [void]
-    initializeMessageTables() {
-        if ($this.Initialized) {
-            return
-        }
-        $this.MessageTables = [ConcurrentDictionary[int, ICollection]]::new()
+        $this.ProgressParentId = $ProgressParentId
+        $this.Streams = [ConcurrentDictionary[int, ICollection]]::new()
         foreach ($stream in [PSJobLogger]::LogStreams.Keys) {
             switch ($stream) {
                 ([PSJobLogger]::StreamProgress) {
-                    $this.MessageTables.$stream = [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new()
+                    $this.Streams.$stream = [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new()
                 }
                 default {
                     if ($this.UseQueues) {
-                        $this.MessageTables.$stream = [ConcurrentQueue[String]]::new()
+                        $this.Streams.$stream = [ConcurrentQueue[String]]::new()
                     }
                 }
             }
         }
-        $this.Initialized = $true
+    }
+
+    [void]
+    SetStreamsFromDictLogger([ConcurrentDictionary[String, PSObject]]$DictLogger) {
+        if ($null -ne $DictLogger -and $DictLogger.ContainsKey('Streams')) {
+            $this.Streams = $DictLogger.Streams
+        }
     }
 
     [void]
@@ -153,7 +159,7 @@ class PSJobLogger {
         $this.Logtofile("$($this.Prefix)$([PSJobLogger]::LogStreams.$Stream): ${Message}")
         # Add the message to the desired queue if desired
         if ($this.UseQueues) {
-            [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
+            [ConcurrentQueue[String]]$messageQueue = $this.Streams.$Stream
             if ($null -ne $messageQueue) {
                 $messageQueue.Enqueue($Message)
             }
@@ -168,7 +174,7 @@ class PSJobLogger {
         if ($null -eq $ArgumentMap) {
             return
         }
-        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $this.MessageTables.$([PSJobLogger]::StreamProgress)
+        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $this.Streams.$([PSJobLogger]::StreamProgress)
         if (-not($progressTable.ContainsKey($Id))) {
             if (-not($progressTable.TryAdd($Id, [ConcurrentDictionary[String, PSObject]]::new()))) {
                 Write-Error "unable to add new key for ${Id}"
@@ -185,6 +191,13 @@ class PSJobLogger {
             }
             $progressArgs.$key = $ArgumentMap.$key
         }
+        if ($this.ProgressParentId -ge 0) {
+            if (-not($progressArgs.ContainsKey('ParentId'))) {
+                $null = $progressArgs.TryAdd('ParentId', $this.ProgressParentId)
+            } else {
+                $progressArgs.ParentId = $this.ProgressParentId
+            }
+        }
     }
 
     [void]
@@ -196,7 +209,7 @@ class PSJobLogger {
 
     [void]
     FlushProgressStream() {
-        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue = $this.MessageTables.$([PSJobLogger]::StreamProgress)
+        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue = $this.Streams.$([PSJobLogger]::StreamProgress)
         # write progress records
         foreach ($recordKey in $progressQueue.Keys) {
             if ($null -eq $progressQueue.$recordKey) {
@@ -224,11 +237,11 @@ class PSJobLogger {
 
     [void]
     FlushOneStream([int]$Stream) {
-        if ($null -eq $this.MessageTables.$Stream) {
+        if ($null -eq $this.Streams.$Stream) {
             return
         }
         # The Progress stream is handled elsewhere since it contains a different type of data
-        if ($Stream -eq [PSJobLogger]::StreamProgress -and $null -ne $this.MessageTables.$Stream) {
+        if ($Stream -eq [PSJobLogger]::StreamProgress -and $null -ne $this.Streams.$Stream) {
             $this.FlushProgressStream()
             return
         }
@@ -237,7 +250,7 @@ class PSJobLogger {
         }
         # Drain the queue for the stream
         [String[]]$messages = @()
-        [ConcurrentQueue[String]]$messageQueue = $this.MessageTables.$Stream
+        [ConcurrentQueue[String]]$messageQueue = $this.Streams.$Stream
         $dequeuedMessage = ''
         while ($messageQueue.Count -gt 0) {
             if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
@@ -307,6 +320,18 @@ class PSJobLogger {
             }
         }
     }
+
+    [ConcurrentDictionary[String,PSObject]]
+    asDictLogger() {
+        $dictLogger = [ConcurrentDictionary[String,PSObject]]::new()
+        $null = $dictLogger.TryAdd('Name', $this.Name)
+        $null = $dictLogger.TryAdd('Prefix', $this.Prefix)
+        $null = $dictLogger.TryAdd('Logfile', $this.Logfile)
+        $null = $dictLogger.TryAdd('UseQueues', $this.UseQueues)
+        $null = $dictLogger.TryAdd('ProgressParentId', $this.ProgressParentId)
+        $null = $dictLogger.TryAdd('Streams', $this.Streams)
+        return $dictLogger
+    }
 }
 
 
@@ -320,15 +345,42 @@ class PSJobLogger {
 .PARAMETER UseQueues
     Indicates that messages should be added to queues for each output stream;
     defaults to $false (optional)
+.PARAMETER ProgressParentId
+    The Id of the parent progress bar; defaults to -1 (optional)
 .EXAMPLE
-    PS> $jobLog = Initialize-PSJobLogger -Name MyLogger -Logfile messages.log
+    PS> $jobLog = Initialize-PSJobLogger -Name MyLogger -Logfile messages.log -ParentProgressId 0
 #>
 function Initialize-PSJobLogger {
     [OutputType([PSJobLogger])]
     param(
         [String]$Name = 'PSJobLogger',
         [String]$Logfile = '',
-        [Switch]$UseQueues
+        [Switch]$UseQueues,
+        [int]$ProgressParentId = -1
     )
-    return [PSJobLogger]::new($Name, $Logfile, $UseQueues)
+    return [PSJobLogger]::new($Name, $Logfile, $UseQueues, $ProgressParentId)
+}
+
+function ConvertFrom-DictLogger {
+    [OutputType([PSJobLogger])]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$DictLogger
+    )
+    if ($null -eq $DictLogger) {
+        throw 'cannot convert from a null DictLogger'
+    }
+    # Get initialization parameters from the DictLogger
+    $name = ''
+    $null = $DictLogger.TryGetValue('Name', [ref]$name)
+    $logfile = ''
+    $null = $DictLogger.TryGetValue('Logfile', [ref]$logfile)
+    $useQueues = $false
+    $null = $DictLogger.TryGetValue('UseQueues', [ref]$useQueues)
+    $progressParentId = -1
+    $null = $DictLogger.TryGetValue('ProgressParentId', [ref]$progressParentId)
+    # Create a new PSJobLogger
+    $jobLog = [PSJobLogger]::new($name, $logfile, $useQueues, $progressParentId)
+    # Set the message tables to the Streams from the DictLogger
+    $jobLog.SetStreamsFromDictLogger($DictLogger)
+    return $jobLog
 }

@@ -13,7 +13,7 @@ task Test {
 
 task Install-Dependencies {
     @('Pester','PSScriptAnalyzer') | ForEach-Object {
-        Install-Module $_ -Force
+        Install-Module $_ -Force -ErrorAction Stop
     }
 }
 
@@ -30,6 +30,7 @@ task Build-Manifest {
         PowerShellVersion = '5.0'
         ScriptsToProcess = 'DictLogger.ps1'
         FunctionsToExport = @(
+            'ConvertFrom-DictLogger',
             'Initialize-PSJobLogger',
             'Initialize-PSJobLoggerDict',
             'Write-MessageToLogfile',
@@ -68,8 +69,11 @@ task Build-Manifest {
 }
 
 task Mp3test {
-    Remove-Item ./hack/test.log -Force -ErrorAction SilentlyContinue
+    Push-Location hack
+    Remove-Item test.log -Force -ErrorAction SilentlyContinue
     Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-    Import-Module ./PSJobLogger -Force
-    ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music -Logfile ./hack/test.log
+    Remove-Module DictLogger -Force -ErrorAction SilentlyContinue
+    Import-Module ../PSJobLogger -Force -ErrorAction Stop
+    ./Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile test.log
+    Pop-Location
 }
