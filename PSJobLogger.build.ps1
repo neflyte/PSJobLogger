@@ -28,13 +28,18 @@ task Build-Manifest {
         ModuleVersion = '0.4.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.0'
-        ScriptsToProcess = 'DictLogger.ps1'
+        ModuleList = @(
+            'DictLogger.psm1'
+        )
         FunctionsToExport = @(
+            'Add-LogMessageToQueue',
             'ConvertFrom-DictLogger',
             'Initialize-PSJobLogger',
             'Initialize-PSJobLoggerDict',
+            'Show-LogProgress',
+            'Show-LogFromOneStream',
+            'Show-Log',
             'Write-MessageToLogfile',
-            'Add-LogMessageToQueue',
             'Write-LogOutput',
             'Write-LogError',
             'Write-LogWarning',
@@ -42,9 +47,6 @@ task Build-Manifest {
             'Write-LogDebug',
             'Write-LogInformation',
             'Write-LogProgress',
-            'Show-LogProgress',
-            'Show-LogFromOneStream',
-            'Show-Log',
             'Write-LogMessagesToStream'
         )
         CmdletsToExport = @()
@@ -59,7 +61,7 @@ task Build-Manifest {
             'PSJobLoggerStreamProgress',
             'PSJobLoggerLogStreams'
         )
-        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.ps1'
+        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
         ProjectUri = 'https://github.com/neflyte/PSJobLogger'
         LicenseUri = 'https://github.com/neflyte/PSJobLogger/blob/main/LICENSE'
