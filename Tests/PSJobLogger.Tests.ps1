@@ -114,5 +114,40 @@ InModuleScope PSJobLogger {
                 $successTable.Count | Should -Be 0
             }
         }
+
+        Context 'asDictLogger' {
+            It 'converts from a class' {
+                $dictLogger = $logger.asDictLogger()
+                $dictLogger | Should -Not -BeNullOrEmpty
+                $expectedKeys = @('Name', 'Prefix', 'Logfile', 'UseQueues', 'ProgressParentId', 'Streams')
+                foreach ($key in $expectedKeys) {
+                    $dictLogger.ContainsKey($key) | Should -BeTrue
+                    $dictLogger.$key | Should -Not -Be $null
+                }
+            }
+        }
+
+        Context 'Initialize-PSJobLogger' {
+            It 'initializes' {
+                $jobLogger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ParentProgressId -1
+                $jobLogger | Should -Not -BeNullOrEmpty
+                $jobLogger.Name | Should -BeExactly $LoggerName
+                $jobLogger.Prefix | Should -BeExactly "${LoggerName}: "
+                $jobLogger.UseQueues | Should -BeTrue
+                $jobLogger.Streams.Keys.Count | Should -Be $([PSJobLogger]::LogStreams.Keys).Count
+                $jobLogger.Streams.Keys | ForEach-Object {
+                    switch ($_) {
+                        ([PSJobLogger]::StreamProgress) {
+                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $jobLogger.Streams.$_
+                            $progressTable.Count | Should -Be 0
+                        }
+                        default {
+                            [ConcurrentQueue[String]]$messageTable = $jobLogger.Streams.$_
+                            $messageTable.Keys.Count | Should -Be 0
+                        }
+                    }
+                }
+            }
+        }
     }
 }
