@@ -17,9 +17,9 @@ function Initialize-PSJobLoggerDict {
         UseQueues = $UseQueues
         ProgressParentId = $ProgressParentId
     }
-    $dictElements.Keys | ForEach-Object {
-        if (-not($logDict.TryAdd($_, $dictElements.$_))) {
-            Write-Error "could not add element $($_) to dict"
+    foreach ($key in $dictElements.Keys) {
+        if (-not($logDict.TryAdd($key, $dictElements.$key))) {
+            Write-Error "could not add element ${key} to dict"
         }
     }
     if ($Logfile -ne '') {
@@ -145,7 +145,7 @@ function Write-LogProgress {
         }
         $progressArgs.$key = $ArgumentMap.$key
     }
-    $progressParentId = $LogDict.ProgressParentId
+    $progressParentId = $LogDict.GetOrAdd('ProgressParentId', -1)
     if ($progressParentId -ge 0) {
         if (-not($progressArgs.ContainsKey('ParentId'))) {
             $null = $progressArgs.TryAdd('ParentId', $progressParentId)
@@ -168,15 +168,10 @@ function Show-LogProgress {
         }
         $progressArgs = $progressQueue.$recordKey
         if ($null -ne $progressArgs.Id -and $null -ne $progressArgs.Activity -and $progressArgs.Activity -ne '') {
-            Write-Progress @progressArgs -ErrorAction SilentlyContinue -ErrorVariable progressError
-            if ($progressError) {
-                foreach ($error in $progressError) {
-                    Write-Error $error
-                }
-            }
+            Write-Progress @progressArgs -ErrorAction 'Continue'
         }
         # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
-        if ($null -ne $progressArgs.Completed -and [Boolean]$progressArgs.Completed) {
+        if ($progressArgs.GetOrAdd('Completed', $false)) {
             if (-not($progressQueue.TryRemove($recordKey, [ref]@{}))) {
                 Write-Error "failed to remove progress stream record ${recordKey}"
             }
@@ -187,7 +182,7 @@ function Show-LogProgress {
 function Show-LogFromOneStream {
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [int]$Stream
+        [Parameter(Mandatory)][int]$Stream
     )
     if ($Stream -eq $PSJobLoggerStreamProgress) {
         Show-LogProgress -LogDict $LogDict
@@ -204,7 +199,7 @@ function Show-LogFromOneStream {
             Write-Error "unable to dequeue message from $($PSJobLoggerLogStreams.$Stream); queue count = $($messageQueue.Count)"
             break
         }
-        $messages += @($dequeuedMessage)
+        $messages += $dequeuedMessage
     }
     # write messages to the desired stream
     Write-LogMessagesToStream -Stream $Stream -Prefix $LogDict.Prefix -Messages $messages
@@ -267,6 +262,7 @@ function Write-LogMessagesToStream {
             }
             ($PSJobLoggerStreamProgress) {
                 # The Progress stream is handled in a different function
+                Write-Error "reached PSJobLoggerStreamProgress in Write-LogMessagesToStream; this is unexpected"
             }
             default {
                 Write-Error "unexpected stream ${Stream}"

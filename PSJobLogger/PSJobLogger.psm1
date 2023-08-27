@@ -81,11 +81,15 @@ class PSJobLogger {
         foreach ($stream in [PSJobLogger]::LogStreams.Keys) {
             switch ($stream) {
                 ([PSJobLogger]::StreamProgress) {
-                    $this.Streams.$stream = [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new()
+                    if (-not($this.Streams.TryAdd($stream, [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new()))) {
+                        Write-Error "unable to add progress stream to stream dict"
+                    }
                 }
                 default {
                     if ($this.UseQueues) {
-                        $this.Streams.$stream = [ConcurrentQueue[String]]::new()
+                        if (-not($this.Streams.TryAdd($stream, [ConcurrentQueue[String]]::new()))) {
+                            Write-Error "unable to add stream ${stream} to stream dict"
+                        }
                     }
                 }
             }
@@ -114,7 +118,7 @@ class PSJobLogger {
     }
 
     [void]
-    Logtofile([String]$Message) {
+    LogToFile([String]$Message) {
         if ($this.Logfile -ne '') {
             $timestamp = Get-Date -Format FileDateTimeUniversal -ErrorAction Continue
             "${timestamp} ${Message}" | Out-File -FilePath $this.Logfile -Append -ErrorAction Continue
@@ -154,7 +158,7 @@ class PSJobLogger {
     [void]
     EnqueueMessage([int]$Stream, [String]$Message) {
         # Log the message to a logfile if one is defined
-        $this.Logtofile("$($this.Prefix)$([PSJobLogger]::LogStreams.$Stream): ${Message}")
+        $this.LogToFile("$($this.Prefix)$([PSJobLogger]::LogStreams.$Stream): ${Message}")
         # Add the message to the desired queue if desired
         if ($this.UseQueues) {
             [ConcurrentQueue[String]]$messageQueue = $this.Streams.$Stream
@@ -169,7 +173,7 @@ class PSJobLogger {
 
     [void]
     Progress([String]$Id, [Hashtable]$ArgumentMap) {
-        if ($null -eq $ArgumentMap) {
+        if ($null -eq $ArgumentMap -or $ArgumentMap.Count -eq 0) {
             return
         }
         [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $this.Streams.$([PSJobLogger]::StreamProgress)
@@ -214,18 +218,12 @@ class PSJobLogger {
                 Write-Warning "FlushProgressStream(): no queue record for ${recordKey}; skipping it"
                 continue
             }
-            $progressArgs = $progressQueue.$recordKey
+            [ConcurrentDictionary[String, PSObject]]$progressArgs = $progressQueue.$recordKey
             if ($null -ne $progressArgs.Id -and $null -ne $progressArgs.Activity -and $progressArgs.Activity -ne '') {
-                $progressError = $null
-                Write-Progress @progressArgs -ErrorAction SilentlyContinue -ErrorVariable progressError
-                if ($progressError) {
-                    foreach ($error in $progressError) {
-                        Write-Error $error
-                    }
-                }
+                Write-Progress @progressArgs -ErrorAction 'Continue'
             }
             # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
-            if ($null -ne $progressArgs.Completed -and [Boolean]$progressArgs.Completed) {
+            if ($progressArgs.GetOrAdd('Completed', $false)) {
                 if (-not($progressQueue.TryRemove($recordKey, [ref]@{}))) {
                     Write-Error "FlushProgressStream(): failed to remove progress stream record ${recordKey}"
                 }
@@ -235,14 +233,18 @@ class PSJobLogger {
 
     [void]
     FlushOneStream([int]$Stream) {
+        if (-not($this.Streams.ContainsKey($Stream))) {
+            return
+        }
         if ($null -eq $this.Streams.$Stream) {
             return
         }
         # The Progress stream is handled elsewhere since it contains a different type of data
-        if ($Stream -eq [PSJobLogger]::StreamProgress -and $null -ne $this.Streams.$Stream) {
+        if ($Stream -eq [PSJobLogger]::StreamProgress) {
             $this.FlushProgressStream()
             return
         }
+        # If we're not using queues then there's nothing to flush
         if (-not($this.UseQueues)) {
             return
         }
@@ -255,7 +257,7 @@ class PSJobLogger {
                 Write-Error "FlushOneStream(): unable to dequeue message from $([PSJobLogger]::LogStreams.$Stream); queue count = $($messageQueue.Count)"
                 break
             }
-            $messages += @($dequeuedMessage)
+            $messages += $dequeuedMessage
         }
         # write messages to the desired stream
         $this.FlushMessages($Stream, $messages)
@@ -311,6 +313,7 @@ class PSJobLogger {
                 }
                 ([PSJobLogger]::StreamProgress) {
                     # This should never be reached, but it's here just in case.
+                    Write-Error "reached StreamProgress in FlushMessages; this is unexpected"
                 }
                 default {
                     Write-Error "FlushMessages(): unexpected stream ${Stream}"
@@ -321,13 +324,20 @@ class PSJobLogger {
 
     [ConcurrentDictionary[String,PSObject]]
     asDictLogger() {
-        $dictLogger = [ConcurrentDictionary[String,PSObject]]::new()
-        $null = $dictLogger.TryAdd('Name', $this.Name)
-        $null = $dictLogger.TryAdd('Prefix', $this.Prefix)
-        $null = $dictLogger.TryAdd('Logfile', $this.Logfile)
-        $null = $dictLogger.TryAdd('UseQueues', $this.UseQueues)
-        $null = $dictLogger.TryAdd('ProgressParentId', $this.ProgressParentId)
-        $null = $dictLogger.TryAdd('Streams', $this.Streams)
+        $dictLogger = [ConcurrentDictionary[String, PSObject]]::new()
+        $dictElements = @{
+            Name = $this.Name
+            Prefix = $this.Prefix
+            Logfile = $this.Logfile
+            UseQueues = $this.UseQueues
+            ProgressParentId = $this.ProgressParentId
+            Streams = $this.Streams
+        }
+        foreach ($key in $dictElements.Keys) {
+            if (-not($dictLogger.TryAdd($key, $dictElements.$key))) {
+                Write-Error "unable to add key ${key} to dict"
+            }
+        }
         return $dictLogger
     }
 }
