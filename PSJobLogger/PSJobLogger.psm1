@@ -55,8 +55,6 @@ class PSJobLogger {
     [ConcurrentDictionary[int, ICollection]]$Streams
     # The logger prefix string; it is prepended to each message
     [String]$Prefix = ''
-    # Indicates that the class has been initialized and should not be initialized again
-    [Boolean]$Initialized = $false
     # The file in which to additionally log all messages
     [String]$Logfile = ''
     # Indicates that message queues should be used

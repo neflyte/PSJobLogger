@@ -8,6 +8,8 @@ task Lint {
 }
 
 task Test {
+    Remove-Module PSJobLogger -Force -ErrorAction Ignore
+    Import-Module ./PSJobLogger/PSJobLogger.psd1 -Force -ErrorAction Stop
     Invoke-Pester
 }
 

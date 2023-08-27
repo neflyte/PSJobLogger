@@ -10,16 +10,23 @@ function Initialize-PSJobLoggerDict {
         [int]$ProgressParentId = -1
     )
     [ConcurrentDictionary[String, PSObject]]$logDict = [ConcurrentDictionary[String, PSObject]]::new()
-    $null = $logDict.TryAdd('Name', $Name)
-    $null = $logDict.TryAdd('Prefix', "${Name}: ")
+    $dictElements = @{
+        Name = $Name
+        Prefix = "${Name}: "
+        Logfile = $Logfile
+        UseQueues = $UseQueues
+        ProgressParentId = $ProgressParentId
+    }
+    $dictElements.Keys | ForEach-Object {
+        if (-not($logDict.TryAdd($_, $dictElements.$_))) {
+            Write-Error "could not add element $($_) to dict"
+        }
+    }
     if ($Logfile -ne '') {
         if (-not(Test-Path $Logfile)) {
             $null = New-Item $Logfile -ItemType File -Force
         }
     }
-    $null = $logDict.TryAdd('Logfile', $Logfile)
-    $null = $logDict.TryAdd('UseQueues', $UseQueues)
-    $null = $logDict.TryAdd('ProgressParentId', $ProgressParentId)
     $streams = [ConcurrentDictionary[int, ICollection]]::new()
     foreach ($stream in $PSJobLoggerLogStreams.Keys) {
         switch ($stream) {
@@ -37,7 +44,9 @@ function Initialize-PSJobLoggerDict {
             }
         }
     }
-    $null = $logDict.TryAdd('Streams', $streams)
+    if (-not($logDict.TryAdd('Streams', $streams))) {
+        Write-Error 'could not add streams to dict'
+    }
     return $logDict
 }
 
