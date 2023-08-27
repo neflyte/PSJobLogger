@@ -28,7 +28,7 @@ task Build-Manifest {
         ModuleVersion = '0.4.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.0'
-        ModuleList = @(
+        NestedModules = @(
             'DictLogger.psm1'
         )
         FunctionsToExport = @(
