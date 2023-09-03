@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for `ParentId` with `Write-Progress` calls
 
 ### Changed
+- Use a single method to format a message to be logged
 
 ### Removed
 
