@@ -36,6 +36,7 @@ task Build-Manifest {
         FunctionsToExport = @(
             'Add-LogMessageToQueue',
             'ConvertFrom-DictLogger',
+            'Format-LogMessage',
             'Initialize-PSJobLogger',
             'Initialize-PSJobLoggerDict',
             'Show-LogProgress',
@@ -74,10 +75,12 @@ task Build-Manifest {
 
 task Mp3test {
     Push-Location hack
-    Remove-Item test.log -Force -ErrorAction SilentlyContinue
-    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-    Remove-Module DictLogger -Force -ErrorAction SilentlyContinue
-    Import-Module ../PSJobLogger -Force -ErrorAction Stop
-    ./Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile test.log
-    Pop-Location
+    try {
+        Remove-Item test.log -Force -ErrorAction SilentlyContinue
+        Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+        Import-Module ../PSJobLogger -Force -ErrorAction Stop
+        ./Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile test.log
+    } finally {
+        Pop-Location
+    }
 }

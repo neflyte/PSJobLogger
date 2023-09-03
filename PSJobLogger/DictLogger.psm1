@@ -12,7 +12,6 @@ function Initialize-PSJobLoggerDict {
     [ConcurrentDictionary[String, PSObject]]$logDict = [ConcurrentDictionary[String, PSObject]]::new()
     $dictElements = @{
         Name = $Name
-        Prefix = "${Name}: "
         Logfile = $Logfile
         UseQueues = $UseQueues
         ProgressParentId = $ProgressParentId
@@ -56,9 +55,21 @@ function Write-MessageToLogfile {
         [Parameter(Mandatory)][String]$Message
     )
     if ($LogDict.Logfile -ne '') {
-        $timestamp = Get-Date -Format FileDateTimeUniversal -ErrorAction Continue
-        "${timestamp} ${Message}" | Out-File -FilePath $LogDict.Logfile -Append -ErrorAction Continue
+        $Message | Out-File -FilePath $LogDict.Logfile -Append -ErrorAction Continue
     }
+}
+
+function Format-LogMessage {
+    [OutputType([String])]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)][int]$Stream,
+        [Parameter(Mandatory)][String]$Message
+    )
+    return "$(Get-Date -Format FileDateUniversal -ErrorAction Continue) " +
+            "[$($LogDict.Name)] " +
+            "($($PSJobLoggerLogStreams.$Stream)) " +
+            $Message
 }
 
 function Add-LogMessageToQueue {
@@ -67,12 +78,12 @@ function Add-LogMessageToQueue {
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String]$Message
     )
-    Write-MessageToLogfile -LogDict $LogDict -Message "$($LogDict.Prefix)$($PSJobLoggerLogStreams.$Stream): ${Message}"
+    Write-MessageToLogfile -LogDict $LogDict -Message $(Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message)
     if ($LogDict.UseQueues -and $null -ne $LogDict.Streams.$Stream) {
         [ConcurrentQueue[String]]$messageQueue = $LogDict.Streams.$Stream
         $messageQueue.Enqueue($Message)
     }
-    Write-LogMessagesToStream -Stream $Stream -Prefix $LogDict.Prefix -Messages @($Message)
+    Write-LogMessagesToStream -Stream $Stream -Messages @($Message)
 }
 
 function Write-LogOutput {
@@ -202,7 +213,7 @@ function Show-LogFromOneStream {
         $messages += $dequeuedMessage
     }
     # write messages to the desired stream
-    Write-LogMessagesToStream -Stream $Stream -Prefix $LogDict.Prefix -Messages $messages
+    Write-LogMessagesToStream -Stream $Stream -Messages $messages
 }
 
 function Show-Log {
@@ -217,45 +228,43 @@ function Show-Log {
 function Write-LogMessagesToStream {
     param(
         [Parameter(Mandatory)][int]$Stream,
-        [Parameter(Mandatory)][String]$Prefix,
         [Parameter(Mandatory)][String[]]$Messages
     )
-    $streamLabel = $PSJobLoggerLogStreams.$Stream
     foreach ($message in $Messages) {
-        $messageWithPrefix = "${Prefix}${streamLabel}: ${message}"
+        $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
         switch ($Stream) {
             ($PSJobLoggerStreamSuccess) {
-                $null = Write-Output -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
+                $null = Write-Output -InputObject $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable outputError
                 if ($outputError) {
                     $outputError | ForEach-Object { Write-Error $_ }
                 }
             }
             ($PSJobLoggerStreamError) {
-                Write-Error -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
+                Write-Error -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
                 if ($errorstreamError) {
                     $errorstreamError | ForEach-Object { Write-Error $_ }
                 }
             }
             ($PSJobLoggerStreamWarning) {
-                Write-Warning -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
+                Write-Warning -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable warningError
                 if ($warningError) {
                     $warningError | ForEach-Object { Write-Error $_ }
                 }
             }
             ($PSJobLoggerStreamVerbose) {
-                Write-Verbose -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
+                Write-Verbose -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable verboseError
                 if ($verboseError) {
                     $verboseError | ForEach-Object { Write-Error $_ }
                 }
             }
             ($PSJobLoggerStreamDebug) {
-                Write-Debug -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
+                Write-Debug -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable debugError
                 if ($debugError) {
                     $debugError | ForEach-Object { Write-Error $_ }
                 }
             }
             ($PSJobLoggerStreamInformation) {
-                Write-Information -MessageData $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
+                Write-Information -MessageData $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable informationError
                 if ($informationError) {
                     $informationError | ForEach-Object { Write-Error $_ }
                 }

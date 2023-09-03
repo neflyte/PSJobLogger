@@ -53,8 +53,6 @@ class PSJobLogger {
     [String]$Name = ''
     # A thread-safe dictionary that holds thread-safe collections for each output stream
     [ConcurrentDictionary[int, ICollection]]$Streams
-    # The logger prefix string; it is prepended to each message
-    [String]$Prefix = ''
     # The file in which to additionally log all messages
     [String]$Logfile = ''
     # Indicates that message queues should be used
@@ -68,9 +66,9 @@ class PSJobLogger {
         [Switch]$UseQueues = $false,
         [int]$ProgressParentId = -1
     ) {
-        $this.SetName($Name)
+        $this.Name = $Name
         if ($Name -eq '') {
-            $this.SetName('PSJobLogger')
+            $this.Name = 'PSJobLogger'
         }
         if ($Logfile -ne '') {
             $this.SetLogfile($Logfile)
@@ -104,12 +102,6 @@ class PSJobLogger {
     }
 
     [void]
-    SetName([String]$Name) {
-        $this.Name = $Name
-        $this.Prefix = "${Name}: "
-    }
-
-    [void]
     SetLogfile([String]$Logfile) {
         if (-not(Test-Path $Logfile)) {
             $null = New-Item $Logfile -ItemType File -Force
@@ -120,8 +112,7 @@ class PSJobLogger {
     [void]
     LogToFile([String]$Message) {
         if ($this.Logfile -ne '') {
-            $timestamp = Get-Date -Format FileDateTimeUniversal -ErrorAction Continue
-            "${timestamp} ${Message}" | Out-File -FilePath $this.Logfile -Append -ErrorAction Continue
+           $Message | Out-File -FilePath $this.Logfile -Append -ErrorAction Continue
         }
     }
 
@@ -155,10 +146,18 @@ class PSJobLogger {
         $this.EnqueueMessage([PSJobLogger]::StreamInformation, $Message)
     }
 
+    [String]
+    FormatLogfileMessage([int]$Stream, [String]$Message) {
+        return "$(Get-Date -Format FileDateUniversal -ErrorAction Continue) " +
+            "[$($this.Name)] " +
+            "($([PSJobLogger]::LogStreams.$Stream)) " +
+            $Message
+    }
+
     [void]
     EnqueueMessage([int]$Stream, [String]$Message) {
         # Log the message to a logfile if one is defined
-        $this.LogToFile("$($this.Prefix)$([PSJobLogger]::LogStreams.$Stream): ${Message}")
+        $this.LogToFile($this.FormatLogfileMessage($Stream, $Message))
         # Add the message to the desired queue if desired
         if ($this.UseQueues) {
             [ConcurrentQueue[String]]$messageQueue = $this.Streams.$Stream
@@ -265,48 +264,47 @@ class PSJobLogger {
 
     [void]
     FlushMessages([int]$Stream, [String[]]$Messages) {
-        $streamLabel = [PSJobLogger]::LogStreams.$Stream
         foreach ($message in $Messages) {
-            $messageWithPrefix = "$( $this.Prefix )${streamLabel}: ${message}"
+            $formattedMessage = $this.FormatLogfileMessage($Stream, $message)
             switch ($Stream) {
                 ([PSJobLogger]::StreamSuccess) {
                     $outputError = $null
-                    $null = Write-Output -InputObject $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable outputError
+                    $null = Write-Output -InputObject $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable outputError
                     if ($outputError) {
                         $outputError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamError) {
                     $errorstreamError = $null
-                    Write-Error -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
+                    Write-Error -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
                     if ($errorstreamError) {
                         $errorstreamError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamWarning) {
                     $warningError = $null
-                    Write-Warning -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable warningError
+                    Write-Warning -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable warningError
                     if ($warningError) {
                         $warningError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamVerbose) {
                     $verboseError = $null
-                    Write-Verbose -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable verboseError
+                    Write-Verbose -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable verboseError
                     if ($verboseError) {
                         $verboseError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamDebug) {
                     $debugError = $null
-                    Write-Debug -Message $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable debugError
+                    Write-Debug -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable debugError
                     if ($debugError) {
                         $debugError | ForEach-Object { Write-Error $_ }
                     }
                 }
                 ([PSJobLogger]::StreamInformation) {
                     $informationError = $null
-                    Write-Information -MessageData $messageWithPrefix -ErrorAction SilentlyContinue -ErrorVariable informationError
+                    Write-Information -MessageData $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable informationError
                     if ($informationError) {
                         $informationError | ForEach-Object { Write-Error $_ }
                     }
@@ -327,7 +325,6 @@ class PSJobLogger {
         $dictLogger = [ConcurrentDictionary[String, PSObject]]::new()
         $dictElements = @{
             Name = $this.Name
-            Prefix = $this.Prefix
             Logfile = $this.Logfile
             UseQueues = $this.UseQueues
             ProgressParentId = $this.ProgressParentId
@@ -341,7 +338,6 @@ class PSJobLogger {
         return $dictLogger
     }
 }
-
 
 <#
 .SYNOPSIS

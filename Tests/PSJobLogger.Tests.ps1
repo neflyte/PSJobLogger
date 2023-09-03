@@ -17,7 +17,6 @@ InModuleScope PSJobLogger {
             It 'initializes correctly' {
                 $logger | Should -Not -BeNullOrEmpty
                 $logger.Name | Should -BeExactly $LoggerName
-                $logger.Prefix | Should -BeExactly "${LoggerName}: "
                 $logger.UseQueues | Should -BeTrue
                 $logger.Streams.Keys.Count | Should -Be $([PSJobLogger]::LogStreams.Keys).Count
                 $logger.Streams.Keys | ForEach-Object {
@@ -88,14 +87,6 @@ InModuleScope PSJobLogger {
             }
         }
 
-        Context 'SetName' {
-            It 'sets the logger name and updates the prefix' {
-                $logger.SetName('foo')
-                $logger.Name | Should -Be 'foo'
-                $logger.Prefix | Should -Be 'foo: '
-            }
-        }
-
         Context 'Output' {
             It 'enqueues a message' {
                 [ConcurrentQueue[String]]$successTable = $logger.Streams.$([PSJobLogger]::StreamSuccess)
@@ -119,7 +110,7 @@ InModuleScope PSJobLogger {
             It 'converts from a class' {
                 $dictLogger = $logger.asDictLogger()
                 $dictLogger | Should -Not -BeNullOrEmpty
-                $expectedKeys = @('Name', 'Prefix', 'Logfile', 'UseQueues', 'ProgressParentId', 'Streams')
+                $expectedKeys = @('Name', 'Logfile', 'UseQueues', 'ProgressParentId', 'Streams')
                 foreach ($key in $expectedKeys) {
                     $dictLogger.ContainsKey($key) | Should -BeTrue
                     $dictLogger.$key | Should -Not -Be $null
@@ -132,7 +123,6 @@ InModuleScope PSJobLogger {
                 $jobLogger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ParentProgressId -1
                 $jobLogger | Should -Not -BeNullOrEmpty
                 $jobLogger.Name | Should -BeExactly $LoggerName
-                $jobLogger.Prefix | Should -BeExactly "${LoggerName}: "
                 $jobLogger.UseQueues | Should -BeTrue
                 $jobLogger.Streams.Keys.Count | Should -Be $([PSJobLogger]::LogStreams.Keys).Count
                 $jobLogger.Streams.Keys | ForEach-Object {

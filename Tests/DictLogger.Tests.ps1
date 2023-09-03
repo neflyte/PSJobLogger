@@ -17,7 +17,6 @@ InModuleScope PSJobLogger {
             It 'initializes correctly' {
                 $logger | Should -Not -BeNullOrEmpty
                 $logger.Name | Should -BeExactly $loggerName
-                $logger.Prefix | Should -BeExactly "${loggerName}: "
                 $logger.UseQueues | Should -BeTrue
                 $logger.ProgressParentId | Should -BeExactly -1
                 $logger.Streams | Should -Not -BeNullOrEmpty
@@ -97,7 +96,7 @@ InModuleScope PSJobLogger {
                 Write-LogOutput -LogDict $logger -Message 'foo'
                 $successTable = $logger.Streams.$PSJobLoggerStreamSuccess
                 $successTable.Count | Should -BeExactly 1
-                $successTable[0] | Should -Be 'foo'
+                $successTable[0] | Should -Contain 'foo'
             }
         }
     
