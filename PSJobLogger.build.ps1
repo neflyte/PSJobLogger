@@ -8,7 +8,15 @@ task Lint {
 }
 
 task Test {
+    Remove-Module PSJobLogger -Force -ErrorAction Ignore
+    Import-Module ./PSJobLogger/PSJobLogger.psd1 -Force -ErrorAction Stop
     Invoke-Pester
+}
+
+task Install-Dependencies {
+    @('Pester','PSScriptAnalyzer') | ForEach-Object {
+        Install-Module $_ -Force -ErrorAction Stop
+    }
 }
 
 task Build-Manifest {
@@ -19,15 +27,22 @@ task Build-Manifest {
         Copyright = '(c) 2023 Alexander W Lew. All Rights Reserved.'
         CompanyName = 'Alan Lew'
         RootModule = 'PSJobLogger.psm1'
-        ModuleVersion = '0.3.0'
+        ModuleVersion = '0.4.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.0'
-        ScriptsToProcess = 'DictLogger.ps1'
+        NestedModules = @(
+            'DictLogger.psm1'
+        )
         FunctionsToExport = @(
+            'Add-LogMessageToQueue',
+            'ConvertFrom-DictLogger',
+            'Format-LogMessage',
             'Initialize-PSJobLogger',
             'Initialize-PSJobLoggerDict',
+            'Show-LogProgress',
+            'Show-LogFromOneStream',
+            'Show-Log',
             'Write-MessageToLogfile',
-            'Add-LogMessageToQueue',
             'Write-LogOutput',
             'Write-LogError',
             'Write-LogWarning',
@@ -35,9 +50,6 @@ task Build-Manifest {
             'Write-LogDebug',
             'Write-LogInformation',
             'Write-LogProgress',
-            'Show-LogProgress',
-            'Show-LogFromOneStream',
-            'Show-Log',
             'Write-LogMessagesToStream'
         )
         CmdletsToExport = @()
@@ -52,7 +64,7 @@ task Build-Manifest {
             'PSJobLoggerStreamProgress',
             'PSJobLoggerLogStreams'
         )
-        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.ps1'
+        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
         ProjectUri = 'https://github.com/neflyte/PSJobLogger'
         LicenseUri = 'https://github.com/neflyte/PSJobLogger/blob/main/LICENSE'
@@ -62,8 +74,13 @@ task Build-Manifest {
 }
 
 task Mp3test {
-    Remove-Item ./hack/test.log -Force -ErrorAction SilentlyContinue
-    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-    Import-Module ./PSJobLogger -Force
-    ./hack/Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile ./hack/test.log
+    Push-Location hack
+    try {
+        Remove-Item test.log -Force -ErrorAction SilentlyContinue
+        Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+        Import-Module ../PSJobLogger -Force -ErrorAction Stop
+        ./Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile test.log
+    } finally {
+        Pop-Location
+    }
 }
