@@ -4,13 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - TBD
+## [0.4.0] - 2023-09-03
 ### Added
 - Methods to convert a DictLogger to a PSJobLogger class and back again
 - Support for `ParentId` with `Write-Progress` calls
 
 ### Changed
-- Use a single method to format a message to be logged
+- Use a single method to format messages to be logged
 
 ### Removed
 
