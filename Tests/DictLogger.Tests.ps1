@@ -7,12 +7,12 @@ InModuleScope PSJobLogger {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
             $loggerName = 'DictLogger-test'
         }
-    
+
         BeforeEach {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
-            $logger = Initialize-PSJobLoggerDict -Name:$loggerName -LogFile:'' -UseQueues -ProgressParentId:-1
+            $logger = Initialize-PSJobLoggerDict -Name $loggerName -LogFile '' -UseQueues -ProgressParentId -1
         }
-    
+
         Context 'Initialize-PSJobLoggerDict' {
             It 'initializes correctly' {
                 $logger | Should -Not -BeNullOrEmpty
@@ -35,7 +35,7 @@ InModuleScope PSJobLogger {
                 }
             }
         }
-    
+
         Context 'Write-LogProgress' {
             It 'adds a new map' {
                 Write-LogProgress -LogDict $logger -Id 'foo' -ArgumentMap @{ Id = 1; Activity = 'bar' }
@@ -88,7 +88,7 @@ InModuleScope PSJobLogger {
                 $progressArgs.Completed | Should -BeTrue
             }
         }
-    
+
         Context 'Write-LogOutput' {
             It 'enqueues a message' {
                 [ConcurrentQueue[String]]$successTable = $logger.Streams.$PSJobLoggerStreamSuccess
@@ -99,6 +99,6 @@ InModuleScope PSJobLogger {
                 $successTable[0] | Should -Contain 'foo'
             }
         }
-    
+
     }
 }

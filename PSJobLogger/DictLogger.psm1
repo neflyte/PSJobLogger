@@ -2,6 +2,7 @@ using namespace System.Collections
 using namespace System.Collections.Concurrent
 
 function Initialize-PSJobLoggerDict {
+    [CmdletBinding()]
     [OutputType([ConcurrentDictionary[String, PSObject]])]
     param(
         [String]$Name = 'PSJobLogger',
@@ -50,6 +51,7 @@ function Initialize-PSJobLoggerDict {
 }
 
 function Write-MessageToLogfile {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -60,6 +62,7 @@ function Write-MessageToLogfile {
 }
 
 function Format-LogMessage {
+    [CmdletBinding()]
     [OutputType([String])]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
@@ -73,6 +76,7 @@ function Format-LogMessage {
 }
 
 function Add-LogMessageToQueue {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][int]$Stream,
@@ -87,6 +91,7 @@ function Add-LogMessageToQueue {
 }
 
 function Write-LogOutput {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -95,6 +100,7 @@ function Write-LogOutput {
 }
 
 function Write-LogError {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -103,6 +109,7 @@ function Write-LogError {
 }
 
 function Write-LogWarning {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -111,6 +118,7 @@ function Write-LogWarning {
 }
 
 function Write-LogVerbose {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -119,6 +127,7 @@ function Write-LogVerbose {
 }
 
 function Write-LogDebug {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -127,6 +136,7 @@ function Write-LogDebug {
 }
 
 function Write-LogInformation {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -135,6 +145,7 @@ function Write-LogInformation {
 }
 
 function Write-LogProgress {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Id,
@@ -167,6 +178,7 @@ function Write-LogProgress {
 }
 
 function Show-LogProgress {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
     )
@@ -191,6 +203,7 @@ function Show-LogProgress {
 }
 
 function Show-LogFromOneStream {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][int]$Stream
@@ -217,6 +230,7 @@ function Show-LogFromOneStream {
 }
 
 function Show-Log {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
     )
@@ -225,7 +239,18 @@ function Show-Log {
     }
 }
 
+function Show-PlainTextLog {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
+    )
+    foreach ($stream in $PSJobLoggerPlainTextLogStreams.Keys) {
+        Show-LogFromOneStream -LogDict $LogDict -Stream $stream
+    }
+}
+
 function Write-LogMessagesToStream {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String[]]$Messages
@@ -234,39 +259,41 @@ function Write-LogMessagesToStream {
         $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
         switch ($Stream) {
             ($PSJobLoggerStreamSuccess) {
-                $null = Write-Output -InputObject $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable outputError
-                if ($outputError) {
-                    $outputError | ForEach-Object { Write-Error $_ }
+                Write-Output -InputObject $formattedMessage -ErrorAction SilentlyContinue
+                if ($Error[0]) {
+                    $outputError = $Error[0]
+                    Write-Error $outputError
                 }
             }
             ($PSJobLoggerStreamError) {
-                Write-Error -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
-                if ($errorstreamError) {
-                    $errorstreamError | ForEach-Object { Write-Error $_ }
-                }
+                Write-Error -Message $formattedMessage
             }
             ($PSJobLoggerStreamWarning) {
-                Write-Warning -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable warningError
-                if ($warningError) {
-                    $warningError | ForEach-Object { Write-Error $_ }
+                Write-Warning -Message $formattedMessage -ErrorAction SilentlyContinue
+                if ($Error[0]) {
+                    $warningError = $Error[0]
+                    Write-Error $warningError
                 }
             }
             ($PSJobLoggerStreamVerbose) {
-                Write-Verbose -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable verboseError
-                if ($verboseError) {
-                    $verboseError | ForEach-Object { Write-Error $_ }
+                Write-Verbose -Message $formattedMessage -ErrorAction SilentlyContinue
+                if ($Error[0]) {
+                    $verboseError = $Error[0]
+                    Write-Error $verboseError
                 }
             }
             ($PSJobLoggerStreamDebug) {
-                Write-Debug -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable debugError
-                if ($debugError) {
-                    $debugError | ForEach-Object { Write-Error $_ }
+                Write-Debug -Message $formattedMessage -ErrorAction SilentlyContinue
+                if ($Error[0]) {
+                    $debugError = $Error[0]
+                    Write-Error $debugError
                 }
             }
             ($PSJobLoggerStreamInformation) {
-                Write-Information -MessageData $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable informationError
-                if ($informationError) {
-                    $informationError | ForEach-Object { Write-Error $_ }
+                Write-Information -MessageData $formattedMessage -ErrorAction SilentlyContinue
+                if ($Error[0]) {
+                    $informationError = $Error[0]
+                    Write-Error $informationError
                 }
             }
             ($PSJobLoggerStreamProgress) {

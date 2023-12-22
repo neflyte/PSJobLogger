@@ -37,15 +37,16 @@ $jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile -Pro
 $dictLog = $jobLog.asDictLogger()
 Write-Progress -Id 0 -Activity 'Processing' -Status 'Starting jobs'
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
-    Import-Module ../PSJobLogger -Force
+    Import-Module (Join-Path $using:PSScriptRoot 'PSJobLogger') -Force
+    $DebugPreference = $using:DebugPreference
+    $VerbosePreference = $using:VerbosePreference
 
     # $log = $using:jobLog
     $log = ConvertFrom-DictLogger -DictLogger $using:dictLog
     $mp3gainDefaultArgs = $using:mp3gainDefaultArgs
-    $DebugPreference = $using:DebugPreference
-    $VerbosePreference = $using:VerbosePreference
 
     function parseMp3gainOutput {
+        [CmdletBinding()]
         param([Hashtable]$Data)
         if ($Data.Message -match '([0-9]+)% of ([0-9]+) bytes analyzed') {
             # Write-LogProgress -LogDict $Log -Id $FullName -ArgumentMap @{
@@ -112,14 +113,14 @@ while ($job.State -eq 'Running') {
     # small sleep to not overload the ui
     Start-Sleep -Seconds 0.1
 }
-# flush any remaining logs
-# Show-LogProgress -LogDict $jobLog
-$jobLog.FlushProgressStream()
 # dismiss the parent progress bar
 Write-Progress -Id 0 -Activity 'Processing' -Completed
 # show job output
 Write-Output "Job output:"
 Receive-Job -Job $job -Wait -AutoRemoveJob
+# flush any remaining logs
+# Show-LogProgress -LogDict $jobLog
+$jobLog.FlushProgressStream()
 Write-Output "---"
 # all done.
 Write-Output 'done.'

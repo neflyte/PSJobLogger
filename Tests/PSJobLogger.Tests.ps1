@@ -1,4 +1,4 @@
-using module '../PSJobLogger/PSJobLogger.psd1'
+using module ../PSJobLogger
 using namespace System.Collections.Concurrent
 
 InModuleScope PSJobLogger {
@@ -120,7 +120,7 @@ InModuleScope PSJobLogger {
 
         Context 'Initialize-PSJobLogger' {
             It 'initializes' {
-                $jobLogger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ParentProgressId -1
+                $jobLogger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ProgressParentId -1
                 $jobLogger | Should -Not -BeNullOrEmpty
                 $jobLogger.Name | Should -BeExactly $LoggerName
                 $jobLogger.UseQueues | Should -BeTrue

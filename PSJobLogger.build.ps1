@@ -8,14 +8,14 @@ task Lint {
 }
 
 task Test {
-    Remove-Module PSJobLogger -Force -ErrorAction Ignore
-    Import-Module ./PSJobLogger/PSJobLogger.psd1 -Force -ErrorAction Stop
+    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    Import-Module ./PSJobLogger -Force
     Invoke-Pester
 }
 
 task Install-Dependencies {
-    @('Pester','PSScriptAnalyzer') | ForEach-Object {
-        Install-Module $_ -Force -ErrorAction Stop
+    foreach ($module in 'Pester','PSScriptAnalyzer') {
+        Install-Module $module -Scope CurrentUser -Force
     }
 }
 
@@ -27,9 +27,9 @@ task Build-Manifest {
         Copyright = '(c) 2023 Alexander W Lew. All Rights Reserved.'
         CompanyName = 'Alan Lew'
         RootModule = 'PSJobLogger.psm1'
-        ModuleVersion = '0.4.0'
+        ModuleVersion = '0.5.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
-        PowerShellVersion = '5.0'
+        PowerShellVersion = '5.1'
         NestedModules = @(
             'DictLogger.psm1'
         )
@@ -63,6 +63,7 @@ task Build-Manifest {
             'PSJobLoggerStreamInformation',
             'PSJobLoggerStreamProgress',
             'PSJobLoggerLogStreams'
+            'PSJobLoggerPlainTextLogStreams'
         )
         FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
