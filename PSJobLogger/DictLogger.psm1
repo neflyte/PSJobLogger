@@ -14,7 +14,9 @@ function Initialize-PSJobLoggerDict {
     $dictElements = @{
         Name = $Name
         Logfile = $Logfile
-        LogToFile = $false
+        ShouldLogToFile = $false
+        VerbosePref = $VerbosePreference
+        DebugPref = $DebugPreference
         UseQueues = $UseQueues
         ProgressParentId = $ProgressParentId
     }
@@ -26,7 +28,7 @@ function Initialize-PSJobLoggerDict {
     if ($Logfile -ne '' -and -not(Test-Path $Logfile)) {
         $null = New-Item $Logfile -ItemType File -Force -ErrorAction SilentlyContinue
         if (-not($Error[0])) {
-            $logDict.LogToFile = $true
+            $logDict.ShouldLogToFile = $true
         }
     }
     $streams = [ConcurrentDictionary[int, ICollection]]::new()
@@ -59,8 +61,8 @@ function Write-MessageToLogfile {
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String]$Message
     )
-    if ($LogDict.LogToFile) {
-        Add-Content -Path $LogDict.Logfile -Value $(Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message) -ErrorAction Continue
+    if ($LogDict.ShouldLogToFile) {
+        Add-Content -Path $LogDict.Logfile -Value $(Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message) -ErrorAction 'Continue'
     }
 }
 
@@ -72,7 +74,7 @@ function Format-LogMessage {
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String]$Message
     )
-    return $(Get-Date -Format FileDateUniversal -ErrorAction Continue),
+    return $(Get-Date -Format FileDateUniversal -ErrorAction 'Continue'),
             "[$($LogDict.Name)]",
             "($($PSJobLoggerLogStreams.$Stream))",
             $Message -join ' '
@@ -203,7 +205,7 @@ function Show-LogProgress {
         }
         $progressArgs = $progressQueue.$recordKey
         if ($null -ne $progressArgs.Id -and $null -ne $progressArgs.Activity -and $progressArgs.Activity -ne '') {
-            Write-Progress @progressArgs -ErrorAction Continue
+            Write-Progress @progressArgs -ErrorAction 'Continue'
         }
         # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
         if ($progressArgs.GetOrAdd('Completed', $false)) {
@@ -271,25 +273,25 @@ function Write-LogMessagesToStream {
         $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
         switch ($Stream) {
             ($PSJobLoggerStreamSuccess) {
-                Write-Output -InputObject $formattedMessage -ErrorAction Continue
+                Write-Output -InputObject $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamError) {
                 Write-Error -Message $formattedMessage
             }
             ($PSJobLoggerStreamWarning) {
-                Write-Warning -Message $formattedMessage -ErrorAction Continue
+                Write-Warning -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamVerbose) {
-                Write-Verbose -Message $formattedMessage -ErrorAction Continue
+                Write-Verbose -Message $formattedMessage -Verbose -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamDebug) {
-                Write-Debug -Message $formattedMessage -ErrorAction Continue
+                Write-Debug -Message $formattedMessage -Debug -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamInformation) {
-                Write-Information -MessageData $formattedMessage -ErrorAction Continue
+                Write-Information -MessageData $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamHost) {
-                Write-Host $formattedMessage -ErrorAction Continue
+                $formattedMessage | Out-Host -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamProgress) {
                 # The Progress stream is handled in a different function
