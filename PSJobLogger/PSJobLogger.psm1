@@ -12,6 +12,7 @@ Set-Variable PSJobLoggerStreamWarning @setVariableOpts -Value ([int]2)
 Set-Variable PSJobLoggerStreamVerbose @setVariableOpts -Value ([int]3)
 Set-Variable PSJobLoggerStreamDebug @setVariableOpts -Value ([int]4)
 Set-Variable PSJobLoggerStreamInformation @setVariableOpts -Value ([int]5)
+Set-Variable PSJobLoggerStreamHost @setVariableOpts -Value ([int]5)
 Set-Variable PSJobLoggerStreamProgress @setVariableOpts -Value ([int]6)
 Set-Variable PSJobLoggerLogStreams @setVariableOpts -Value @{
     $PSJobLoggerStreamSuccess = 'Success'
@@ -20,6 +21,7 @@ Set-Variable PSJobLoggerLogStreams @setVariableOpts -Value @{
     $PSJobLoggerStreamVerbose = 'Verbose'
     $PSJobLoggerStreamDebug = 'Debug'
     $PSJobLoggerStreamInformation = 'Information'
+    $PSJobLoggerStreamHost = 'Host'
     $PSJobLoggerStreamProgress = 'Progress'
 }
 Set-Variable PSJobLoggerPlainTextLogStreams @setVariableOpts -Value @{
@@ -29,6 +31,7 @@ Set-Variable PSJobLoggerPlainTextLogStreams @setVariableOpts -Value @{
     $PSJobLoggerStreamVerbose = 'Verbose'
     $PSJobLoggerStreamDebug = 'Debug'
     $PSJobLoggerStreamInformation = 'Information'
+    $PSJobLoggerStreamHost = 'Host'
 }
 
 class PSJobLogger {
@@ -41,6 +44,7 @@ class PSJobLogger {
     static [int]$StreamVerbose = 3
     static [int]$StreamDebug = 4
     static [int]$StreamInformation = 5
+    static [int]$StreamHost = 5
     static [int]$StreamProgress = 6
     <#
     A list of all available output streams
@@ -52,6 +56,7 @@ class PSJobLogger {
         [PSJobLogger]::StreamVerbose = 'Verbose'
         [PSJobLogger]::StreamDebug = 'Debug'
         [PSJobLogger]::StreamInformation = 'Information'
+        [PSJobLogger]::StreamHost = 'Host'
         [PSJobLogger]::StreamProgress = 'Progress'
     }
     <#
@@ -64,6 +69,7 @@ class PSJobLogger {
         [PSJobLogger]::StreamVerbose = 'Verbose'
         [PSJobLogger]::StreamDebug = 'Debug'
         [PSJobLogger]::StreamInformation = 'Information'
+        [PSJobLogger]::StreamHost = 'Host'
     }
 
     # The name of the logger; used to construct a "prefix" that is prepended to each message
@@ -72,6 +78,8 @@ class PSJobLogger {
     [ConcurrentDictionary[int, ICollection]]$Streams
     # The file in which to additionally log all messages
     [String]$Logfile = ''
+    # Indicates that a log file has been defined
+    [Boolean]$LogToFile = $false
     # Indicates that message queues should be used
     [Boolean]$UseQueues = $false
     # Contains the Id of the parent Progress bar
@@ -120,17 +128,22 @@ class PSJobLogger {
 
     [void]
     SetLogfile([String]$Logfile) {
-        if (-not(Test-Path $Logfile)) {
-            $null = New-Item $Logfile -ItemType File -Force
+        if ($Logfile -ne '' -and -not(Test-Path $Logfile)) {
+            $null = New-Item $Logfile -ItemType File -Force -ErrorAction SilentlyContinue
+            if ($Error[0]) {
+                $logfileError = $Error[0]
+                Write-Error "Unable to create log file ${Logfile}: ${logfileError}"
+                return
+            }
         }
         $this.Logfile = $Logfile
+        $this.LogToFile = $this.Logfile -ne ''
     }
 
     [void]
-    LogToFile([String]$Message) {
-        if ($this.Logfile -ne '') {
-           #$Message | Out-File -FilePath $this.Logfile -Append -ErrorAction Continue
-           Add-Content -Path $this.Logfile -Value $Message -ErrorAction Continue
+    LogToFile([int]$Stream, [String]$Message) {
+        if ($this.LogToFile) {
+            Add-Content -Path $this.Logfile -Value $this.FormatLogfileMessage($Stream, $Message) -ErrorAction Continue
         }
     }
 
@@ -164,6 +177,11 @@ class PSJobLogger {
         $this.EnqueueMessage([PSJobLogger]::StreamInformation, $Message)
     }
 
+    [void]
+    Host([String]$Message) {
+        $this.EnqueueMessage([PSJobLogger]::StreamHost, $Message)
+    }
+
     [String]
     FormatLogfileMessage([int]$Stream, [String]$Message) {
         return "$(Get-Date -Format FileDateUniversal -ErrorAction SilentlyContinue)",
@@ -175,12 +193,11 @@ class PSJobLogger {
     [void]
     EnqueueMessage([int]$Stream, [String]$Message) {
         # Log the message to a logfile if one is defined
-        $this.LogToFile($this.FormatLogfileMessage($Stream, $Message))
+        $this.LogToFile($Stream, $Message)
         # Add the message to the desired queue if queues are enabled
         if ($this.UseQueues) {
-            [ConcurrentQueue[String]]$messageQueue = $this.Streams.$Stream
-            if ($null -ne $messageQueue) {
-                $messageQueue.Enqueue($Message)
+            if ($null -ne $this.Streams.$Stream) {
+                $this.Streams.$Stream.Enqueue($Message)
             }
             return
         }
@@ -257,12 +274,6 @@ class PSJobLogger {
 
     [void]
     FlushOneStream([int]$Stream) {
-        if (-not($this.Streams.ContainsKey($Stream))) {
-            return
-        }
-        if ($null -eq $this.Streams.$Stream) {
-            return
-        }
         # The Progress stream is handled elsewhere since it contains a different type of data
         if ($Stream -eq [PSJobLogger]::StreamProgress) {
             $this.FlushProgressStream()
@@ -293,49 +304,32 @@ class PSJobLogger {
             $formattedMessage = $this.FormatLogfileMessage($Stream, $message)
             switch ($Stream) {
                 ([PSJobLogger]::StreamSuccess) {
-                    Write-Output -InputObject $formattedMessage -ErrorAction SilentlyContinue
-                    if ($Error[0]) {
-                        $outputError = $Error[0]
-                        Write-Error $outputError
-                    }
+                    Write-Output -InputObject $formattedMessage -ErrorAction Continue
                 }
                 ([PSJobLogger]::StreamError) {
                     Write-Error -Message $formattedMessage
                 }
                 ([PSJobLogger]::StreamWarning) {
-                    Write-Warning -Message $formattedMessage -ErrorAction SilentlyContinue
-                    if ($Error[0]) {
-                        $warningError = $Error[0]
-                        Write-Error $warningError
-                    }
+                    Write-Warning -Message $formattedMessage -ErrorAction Continue
                 }
                 ([PSJobLogger]::StreamVerbose) {
-                    Write-Verbose -Message $formattedMessage -ErrorAction SilentlyContinue
-                    if ($Error[0]) {
-                        $verboseError = $Error[0]
-                        Write-Error $verboseError
-                    }
+                    Write-Verbose -Message $formattedMessage -ErrorAction Continue
                 }
                 ([PSJobLogger]::StreamDebug) {
-                    Write-Debug -Message $formattedMessage -ErrorAction SilentlyContinue
-                    if ($Error[0]) {
-                        $debugError = $Error[0]
-                        Write-Error $debugError
-                    }
+                    Write-Debug -Message $formattedMessage -ErrorAction Continue
                 }
                 ([PSJobLogger]::StreamInformation) {
-                    Write-Information -MessageData $formattedMessage -ErrorAction SilentlyContinue
-                    if ($Error[0]) {
-                        $informationError = $Error[0]
-                        Write-Error $informationError
-                    }
+                    Write-Information -MessageData $formattedMessage -ErrorAction Continue
+                }
+                ([PSJobLogger]::StreamHost) {
+                    Write-Host $formattedMessage -ErrorAction Continue
                 }
                 ([PSJobLogger]::StreamProgress) {
                     # This should never be reached, but it's here just in case.
-                    Write-Error "reached StreamProgress in FlushMessages; this is unexpected"
+                    Write-Error "reached StreamProgress in FlushMessages; this is unexpected. message: ${formattedMessage}"
                 }
                 default {
-                    Write-Error "FlushMessages(): unexpected stream ${Stream}"
+                    Write-Error "FlushMessages(): unexpected stream ${Stream}; message: ${formattedMessage}"
                 }
             }
         }
@@ -347,6 +341,7 @@ class PSJobLogger {
         $dictElements = @{
             Name = $this.Name
             Logfile = $this.Logfile
+            LogToFile = $this.LogToFile
             UseQueues = $this.UseQueues
             ProgressParentId = $this.ProgressParentId
             Streams = $this.Streams

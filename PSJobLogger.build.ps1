@@ -65,7 +65,7 @@ task Build-Manifest {
             'PSJobLoggerLogStreams'
             'PSJobLoggerPlainTextLogStreams'
         )
-        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1'
+        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1', 'en-US/about_PSJobLogger.help.txt'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
         ProjectUri = 'https://github.com/neflyte/PSJobLogger'
         LicenseUri = 'https://github.com/neflyte/PSJobLogger/blob/main/LICENSE'
