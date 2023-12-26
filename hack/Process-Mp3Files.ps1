@@ -6,11 +6,11 @@ param(
     [int]$Threads = 4
 )
 if ($Threads -lt 1) {
-    Write-Error "must use at least one thread"
+    Write-Error 'must use at least one thread'
     exit
 }
 if ($Directory -eq '' -or -not(Test-Path $Directory)) {
-    Write-Error "must specify a valid directory"
+    Write-Error 'must specify a valid directory'
     exit
 }
 Write-Output "Collecting MP3 files in ${Directory}"
