@@ -37,7 +37,7 @@ $jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile -Pro
 $dictLog = $jobLog.asDictLogger()
 Write-Progress -Id 0 -Activity 'Processing' -Status 'Starting jobs'
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
-    Import-Module (Join-Path $using:PSScriptRoot 'PSJobLogger') -Force
+    Import-Module (Join-Path $using:PSScriptRoot '..' 'PSJobLogger') -Force
     $DebugPreference = $using:DebugPreference
     $VerbosePreference = $using:VerbosePreference
 

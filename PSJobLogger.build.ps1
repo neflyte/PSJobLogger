@@ -1,6 +1,7 @@
 #requires -modules InvokeBuild
 task Clean {
     Remove-Item PSJobLogger/PSJobLogger.psd1 -Force -ErrorAction SilentlyContinue
+    Remove-Item hack/test.log -Force -ErrorAction SilentlyContinue
 }
 
 task Lint {
@@ -76,11 +77,11 @@ task Build-Manifest {
 }
 
 task Mp3test {
+    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    Import-Module ./PSJobLogger -Force
     Push-Location hack
     try {
         Remove-Item test.log -Force -ErrorAction SilentlyContinue
-        Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-        Import-Module ../PSJobLogger -Force -ErrorAction Stop
         ./Process-Mp3Files.ps1 -Directory $HOME/Music/share -Logfile test.log
     } finally {
         Pop-Location
