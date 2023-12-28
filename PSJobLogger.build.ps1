@@ -61,6 +61,7 @@ task Build-Manifest {
             'PSJobLoggerStreamVerbose',
             'PSJobLoggerStreamDebug',
             'PSJobLoggerStreamInformation',
+            'PSJobLoggerStreamHost',
             'PSJobLoggerStreamProgress',
             'PSJobLoggerLogStreams'
             'PSJobLoggerPlainTextLogStreams'

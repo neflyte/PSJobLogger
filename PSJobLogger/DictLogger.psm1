@@ -54,6 +54,24 @@ function Initialize-PSJobLoggerDict {
     return $logDict
 }
 
+function Set-Logfile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
+        [String]$Filename
+    )
+    if ($Filename -ne '' -and -not(Test-Path $Filename)) {
+        $null = New-Item $Filename -ItemType File -Force -ErrorAction 'SilentlyContinue'
+        if ($Error[0]) {
+            $logfileError = $Error[0]
+            Write-Error "Unable to create log file ${Filename}: ${logfileError}"
+            return
+        }
+    }
+    $LogDict.Logfile = $Filename
+    $LogDict.ShouldLogToFile = $LogDict.Logfile -ne ''
+}
+
 function Write-MessageToLogfile {
     [CmdletBinding()]
     param(
@@ -282,10 +300,12 @@ function Write-LogMessagesToStream {
                 Write-Warning -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamVerbose) {
-                Write-Verbose -Message $formattedMessage -Verbose -ErrorAction 'Continue'
+                $VerbosePreference = $LogDict.VerbosePref
+                Write-Verbose -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamDebug) {
-                Write-Debug -Message $formattedMessage -Debug -ErrorAction 'Continue'
+                $DebugPreference = $LogDict.DebugPref
+                Write-Debug -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamInformation) {
                 Write-Information -MessageData $formattedMessage -ErrorAction 'Continue'

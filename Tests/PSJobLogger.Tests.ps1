@@ -5,14 +5,12 @@ using namespace System.IO
 Import-Module (Join-Path $PSScriptRoot 'Helpers.psm1') -Force
 
 InModuleScope PSJobLogger {
-    Describe 'PSJobLogger' {
-        BeforeAll {
-            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
-            $LoggerName = 'PSJobLogger-test'
-        }
+    BeforeAll {
+        $LoggerName = 'PSJobLogger-test'
+    }
 
+    Describe 'PSJobLogger' {
         BeforeEach {
-            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
             $logger = [PSJobLogger]::new($LoggerName, '', $true, -1)
         }
 
@@ -117,7 +115,6 @@ InModuleScope PSJobLogger {
             BeforeEach {
                 $logger.VerbosePref = 'Continue'
                 $logger.DebugPref = 'Continue'
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('UseDeclaredVarsMoreThanAssignments', '')]
                 $logCapture = New-TemporaryFile
             }
 
@@ -142,6 +139,34 @@ InModuleScope PSJobLogger {
                 $captured -match '5: LOG DEBUG' | Should -BeTrue
                 $captured -match '6: LOG INFO' | Should -BeTrue
                 $captured -match '6: LOG HOST' | Should -BeTrue
+            }
+        }
+
+        Context 'Logfile' {
+            BeforeEach {
+                $logfile = New-TemporaryFile
+            }
+            AfterEach {
+                Remove-Item $logfile -Force
+            }
+            It 'Writes to a log file' {
+                $logger.SetLogfile($logfile)
+                $logger.Output('1: LOG SUCCESS')
+                $logger.Error('2: LOG ERROR')
+                $logger.Warning('3: LOG WARNING')
+                $logger.Verbose('4: LOG VERBOSE')
+                $logger.Debug('5: LOG DEBUG')
+                $logger.Information('6: LOG INFO')
+                $logger.Host('6: LOG HOST')
+                $logger.FlushPlainTextStreams()
+                $logfileContents = Get-Content $logfile -Raw
+                $logfileContents -match '1: LOG SUCCESS' | Should -BeTrue
+                $logfileContents -match '2: LOG ERROR' | Should -BeTrue
+                $logfileContents -match '3: LOG WARNING' | Should -BeTrue
+                $logfileContents -match '4: LOG VERBOSE' | Should -BeTrue
+                $logfileContents -match '5: LOG DEBUG' | Should -BeTrue
+                $logfileContents -match '6: LOG INFO' | Should -BeTrue
+                $logfileContents -match '6: LOG HOST' | Should -BeTrue
             }
         }
 

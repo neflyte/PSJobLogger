@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - TBD
 ### Added
 - Method to flush Plain Text streams (i.e. all streams except Progress)
+- Unit tests to cover writing log messages to streams and to a file
+- Function to set the logfile in the DictLogger
 
 ### Changed
 

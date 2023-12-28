@@ -11,7 +11,7 @@ LONG DESCRIPTION
     as a self-contained PowerShell class.
 
     Note that PowerShell classes are not thread-safe due to session affinity. PowerShell 7.4+
-    has a workaround for thread-safety of classes; the class version of PSJobLogger can be used
+    has a workaround for thread-safety of classes; the class version of PSJobLogger could be used
     safely in that environment.
 
 EXAMPLES
