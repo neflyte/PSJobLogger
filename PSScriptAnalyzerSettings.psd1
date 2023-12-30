@@ -1,3 +1,6 @@
 @{
-    ExcludeRules = @('PSAvoidTrailingWhitespace')
+    ExcludeRules = @(
+        'PSAvoidTrailingWhitespace',
+        'PSUseShouldProcessForStateChangingFunctions'
+    )
 }

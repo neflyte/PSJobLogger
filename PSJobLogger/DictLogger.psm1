@@ -2,6 +2,7 @@ using namespace System.Collections
 using namespace System.Collections.Concurrent
 
 function Initialize-PSJobLoggerDict {
+    [CmdletBinding()]
     [OutputType([ConcurrentDictionary[String, PSObject]])]
     param(
         [String]$Name = 'PSJobLogger',
@@ -13,6 +14,9 @@ function Initialize-PSJobLoggerDict {
     $dictElements = @{
         Name = $Name
         Logfile = $Logfile
+        ShouldLogToFile = $false
+        VerbosePref = $VerbosePreference
+        DebugPref = $DebugPreference
         UseQueues = $UseQueues
         ProgressParentId = $ProgressParentId
     }
@@ -21,9 +25,10 @@ function Initialize-PSJobLoggerDict {
             Write-Error "could not add element ${key} to dict"
         }
     }
-    if ($Logfile -ne '') {
-        if (-not(Test-Path $Logfile)) {
-            $null = New-Item $Logfile -ItemType File -Force
+    if ($Logfile -ne '' -and -not(Test-Path $Logfile)) {
+        $null = New-Item $Logfile -ItemType File -Force -ErrorAction SilentlyContinue
+        if (-not($Error[0])) {
+            $logDict.ShouldLogToFile = $true
         }
     }
     $streams = [ConcurrentDictionary[int, ICollection]]::new()
@@ -49,37 +54,59 @@ function Initialize-PSJobLoggerDict {
     return $logDict
 }
 
-function Write-MessageToLogfile {
+function Set-Logfile {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
+        [String]$Filename
+    )
+    if ($Filename -ne '' -and -not(Test-Path $Filename)) {
+        $null = New-Item $Filename -ItemType File -Force -ErrorAction 'SilentlyContinue'
+        if ($Error[0]) {
+            $logfileError = $Error[0]
+            Write-Error "Unable to create log file ${Filename}: ${logfileError}"
+            return
+        }
+    }
+    $LogDict.Logfile = $Filename
+    $LogDict.ShouldLogToFile = $LogDict.Logfile -ne ''
+}
+
+function Write-MessageToLogfile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String]$Message
     )
-    if ($LogDict.Logfile -ne '') {
-        $Message | Out-File -FilePath $LogDict.Logfile -Append -ErrorAction Continue
+    if ($LogDict.ShouldLogToFile) {
+        Add-Content -Path $LogDict.Logfile -Value $(Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message) -ErrorAction 'Continue'
     }
 }
 
 function Format-LogMessage {
+    [CmdletBinding()]
     [OutputType([String])]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String]$Message
     )
-    return "$(Get-Date -Format FileDateUniversal -ErrorAction Continue) " +
-            "[$($LogDict.Name)] " +
-            "($($PSJobLoggerLogStreams.$Stream)) " +
-            $Message
+    return $(Get-Date -Format FileDateUniversal -ErrorAction 'Continue'),
+            "[$($LogDict.Name)]",
+            "($($PSJobLoggerLogStreams.$Stream))",
+            $Message -join ' '
 }
 
 function Add-LogMessageToQueue {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String]$Message
     )
-    Write-MessageToLogfile -LogDict $LogDict -Message $(Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message)
-    if ($LogDict.UseQueues -and $null -ne $LogDict.Streams.$Stream) {
+    Write-MessageToLogfile -LogDict $LogDict -Stream $Stream -Message $Message
+    if ($LogDict.UseQueues) {
         [ConcurrentQueue[String]]$messageQueue = $LogDict.Streams.$Stream
         $messageQueue.Enqueue($Message)
     }
@@ -87,6 +114,7 @@ function Add-LogMessageToQueue {
 }
 
 function Write-LogOutput {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -95,6 +123,7 @@ function Write-LogOutput {
 }
 
 function Write-LogError {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -103,6 +132,7 @@ function Write-LogError {
 }
 
 function Write-LogWarning {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -111,6 +141,7 @@ function Write-LogWarning {
 }
 
 function Write-LogVerbose {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -119,6 +150,7 @@ function Write-LogVerbose {
 }
 
 function Write-LogDebug {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -127,6 +159,7 @@ function Write-LogDebug {
 }
 
 function Write-LogInformation {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Message
@@ -134,7 +167,17 @@ function Write-LogInformation {
     Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamInformation -Message $Message
 }
 
+function Write-LogHost {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)][String]$Message
+    )
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamHost -Message $Message
+}
+
 function Write-LogProgress {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][String]$Id,
@@ -167,6 +210,7 @@ function Write-LogProgress {
 }
 
 function Show-LogProgress {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
     )
@@ -191,6 +235,7 @@ function Show-LogProgress {
 }
 
 function Show-LogFromOneStream {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)][int]$Stream
@@ -217,6 +262,7 @@ function Show-LogFromOneStream {
 }
 
 function Show-Log {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
     )
@@ -225,7 +271,18 @@ function Show-Log {
     }
 }
 
+function Show-PlainTextLog {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
+    )
+    foreach ($stream in $PSJobLoggerPlainTextLogStreams.Keys) {
+        Show-LogFromOneStream -LogDict $LogDict -Stream $stream
+    }
+}
+
 function Write-LogMessagesToStream {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][int]$Stream,
         [Parameter(Mandatory)][String[]]$Messages
@@ -234,47 +291,34 @@ function Write-LogMessagesToStream {
         $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
         switch ($Stream) {
             ($PSJobLoggerStreamSuccess) {
-                $null = Write-Output -InputObject $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable outputError
-                if ($outputError) {
-                    $outputError | ForEach-Object { Write-Error $_ }
-                }
+                Write-Output -InputObject $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamError) {
-                Write-Error -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable errorstreamError
-                if ($errorstreamError) {
-                    $errorstreamError | ForEach-Object { Write-Error $_ }
-                }
+                Write-Error -Message $formattedMessage
             }
             ($PSJobLoggerStreamWarning) {
-                Write-Warning -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable warningError
-                if ($warningError) {
-                    $warningError | ForEach-Object { Write-Error $_ }
-                }
+                Write-Warning -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamVerbose) {
-                Write-Verbose -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable verboseError
-                if ($verboseError) {
-                    $verboseError | ForEach-Object { Write-Error $_ }
-                }
+                $VerbosePreference = $LogDict.VerbosePref
+                Write-Verbose -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamDebug) {
-                Write-Debug -Message $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable debugError
-                if ($debugError) {
-                    $debugError | ForEach-Object { Write-Error $_ }
-                }
+                $DebugPreference = $LogDict.DebugPref
+                Write-Debug -Message $formattedMessage -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamInformation) {
-                Write-Information -MessageData $formattedMessage -ErrorAction SilentlyContinue -ErrorVariable informationError
-                if ($informationError) {
-                    $informationError | ForEach-Object { Write-Error $_ }
-                }
+                Write-Information -MessageData $formattedMessage -ErrorAction 'Continue'
+            }
+            ($PSJobLoggerStreamHost) {
+                $formattedMessage | Out-Host -ErrorAction 'Continue'
             }
             ($PSJobLoggerStreamProgress) {
                 # The Progress stream is handled in a different function
-                Write-Error "reached PSJobLoggerStreamProgress in Write-LogMessagesToStream; this is unexpected"
+                Write-Error "reached PSJobLoggerStreamProgress in Write-LogMessagesToStream; this is unexpected. message: ${formattedMessage}"
             }
             default {
-                Write-Error "unexpected stream ${Stream}"
+                Write-Error "unexpected stream ${Stream}; message: ${formattedMessage}"
             }
         }
     }

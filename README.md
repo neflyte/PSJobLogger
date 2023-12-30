@@ -46,10 +46,10 @@ while ($job.State -eq 'Running') {
     # short sleep to not overload the UI
     Start-Sleep -Seconds 0.25
 }
-# Show any remaining messages
-Show-Log -LogDict $jobLog
 # Show the job output and clean up finshed jobs
 Receive-Job -Job $job -Wait -AutoRemoveJob
+# Show any remaining messages
+Show-Log -LogDict $jobLog
 ```
 
 ### Class
@@ -79,10 +79,10 @@ while ($job.State -eq 'Running') {
     # short sleep to not overload the UI
     Start-Sleep -Seconds 0.25
 }
-# Show any remaining messages
-$jobLog.FlushStreams()
 # Show the job output and clean up finshed jobs
 Receive-Job -Job $job -Wait -AutoRemoveJob
+# Show any remaining messages
+$jobLog.FlushStreams()
 ```
 
 ## License

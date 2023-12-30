@@ -6,12 +6,12 @@ SHORT DESCRIPTION
 
 LONG DESCRIPTION
     PSJobLogger is a wrapper around a set of ConcurrentDictionary and ConcurrentQueue objects
-    which allow for access to logging facilities (e.g. Write-Output, Write-Debug) in a thread-safe
+    which allow for access to logging facilities (e.g. Write-Output, Write-Debug) in thread-safe
     manner. It is implemented as a set of functions centered around a ConcurrentDictionary, and
     as a self-contained PowerShell class.
 
     Note that PowerShell classes are not thread-safe due to session affinity. PowerShell 7.4+
-    has a workaround for thread-safety of classes; the class version of PSJobLogger can be used
+    has a workaround for thread-safety of classes; the class version of PSJobLogger could be used
     safely in that environment.
 
 EXAMPLES
@@ -41,10 +41,10 @@ EXAMPLES
         # short sleep to not overload the UI
         Start-Sleep -Seconds 0.25
     }
-    # Show any remaining messages
-    Show-Log -LogDict $jobLog
     # Show the job output and clean up finshed jobs
     Receive-Job -Job $job -Wait -AutoRemoveJob
+    # Show any remaining messages
+    Show-Log -LogDict $jobLog
 
 
     Example using ForEach-Object -AsJob -Parallel with a class:
@@ -73,10 +73,10 @@ EXAMPLES
         # short sleep to not overload the UI
         Start-Sleep -Seconds 0.25
     }
-    # Show any remaining messages
-    $jobLog.FlushStreams()
     # Show the job output and clean up finshed jobs
     Receive-Job -Job $job -Wait -AutoRemoveJob
+    # Show any remaining messages
+    $jobLog.FlushStreams()
 
 KEYWORDS
     job parallel foreach-object logger logging
