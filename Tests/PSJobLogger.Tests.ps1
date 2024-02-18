@@ -142,6 +142,8 @@ InModuleScope PSJobLogger {
             }
         }
 
+        # TODO: Add tests for FlushProgressStream, especially around removing keys for completed jobs
+
         Context 'Logfile' {
             BeforeEach {
                 $logfile = New-TemporaryFile

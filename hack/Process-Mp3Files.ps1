@@ -33,11 +33,11 @@ Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads
 # $mp3gainDefaultArgs = @('-e', '-r', '-c', '-k')
 $mp3gainDefaultArgs = @('-e', '-r', '-c', '-k', '-s', 'r')
 # $jobLog = Initialize-PSJobLoggerDict -Name 'Process-Mp3Files' -Logfile $Logfile -ProgressParentId 0
-$jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile -ProgressParentId 0
+$jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile -ProgressParentId 0 -EstimatedThreads $Threads
 $dictLog = $jobLog.asDictLogger()
 Write-Progress -Id 0 -Activity 'Processing' -Status 'Starting jobs'
 $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel {
-    Import-Module (Join-Path $using:PSScriptRoot '..' 'PSJobLogger') -Force
+    Import-Module (Join-Path -Path $using:PSScriptRoot -ChildPath '..' -AdditionalChildPath 'PSJobLogger') -Force
     $DebugPreference = $using:DebugPreference
     $VerbosePreference = $using:VerbosePreference
 

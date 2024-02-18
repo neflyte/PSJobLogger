@@ -8,9 +8,13 @@ function Initialize-PSJobLoggerDict {
         [String]$Name = 'PSJobLogger',
         [String]$Logfile = '',
         [Switch]$UseQueues,
-        [int]$ProgressParentId = -1
+        [int]$ProgressParentId = -1,
+        [int]$EstimatedThreads = -1
     )
-    [ConcurrentDictionary[String, PSObject]]$logDict = [ConcurrentDictionary[String, PSObject]]::new()
+    $concurrencyLevel = $EstimatedThreads
+    if ($concurrencyLevel -lt 1) {
+        $concurrencyLevel = [Environment]::ProcessorCount * 2
+    }
     $dictElements = @{
         Name = $Name
         Logfile = $Logfile
@@ -20,6 +24,7 @@ function Initialize-PSJobLoggerDict {
         UseQueues = $UseQueues
         ProgressParentId = $ProgressParentId
     }
+    [ConcurrentDictionary[String, PSObject]]$logDict = [ConcurrentDictionary[String, PSObject]]::new($concurrencyLevel, $dictElements.Keys.Count + 1)
     foreach ($key in $dictElements.Keys) {
         if (-not($logDict.TryAdd($key, $dictElements.$key))) {
             Write-Error "could not add element ${key} to dict"
@@ -31,7 +36,7 @@ function Initialize-PSJobLoggerDict {
             $logDict.ShouldLogToFile = $true
         }
     }
-    $streams = [ConcurrentDictionary[int, ICollection]]::new()
+    $streams = [ConcurrentDictionary[int, ICollection]]::new($concurrencyLevel, $PSJobLoggerLogStreams.Keys.Count)
     foreach ($stream in $PSJobLoggerLogStreams.Keys) {
         switch ($stream) {
             $PSJobLoggerStreamProgress {

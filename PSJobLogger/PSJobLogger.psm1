@@ -90,12 +90,15 @@ class PSJobLogger {
     [String]$DebugPref = 'SilentlyContinue'
     # Contains the desired value of VerbosePreference when invoking Write-Verbose
     [String]$VerbosePref = 'SilentlyContinue'
+    # Contains the desired concurrency level for ConcurrentDictionary objects
+    [int]$ConcurrencyLevel = -1
 
     PSJobLogger(
         [String]$Name = 'PSJobLogger',
         [String]$Logfile = '',
         [Switch]$UseQueues = $false,
-        [int]$ProgressParentId = -1
+        [int]$ProgressParentId = -1,
+        [int]$EstimatedThreads = -1
     ) {
         $this.Name = $Name
         if ($Name -eq '') {
@@ -106,7 +109,11 @@ class PSJobLogger {
         }
         $this.UseQueues = $UseQueues
         $this.ProgressParentId = $ProgressParentId
-        $this.Streams = [ConcurrentDictionary[int, ICollection]]::new()
+        $this.ConcurrencyLevel = $EstimatedThreads
+        if ($this.ConcurrencyLevel -lt 1) {
+            $this.ConcurrencyLevel = [Environment]::ProcessorCount * 2
+        }
+        $this.Streams = [ConcurrentDictionary[int, ICollection]]::new($this.ConcurrencyLevel, [PSJobLogger]::LogStreams.Keys.Count)
         foreach ($stream in [PSJobLogger]::LogStreams.Keys) {
             switch ($stream) {
                 ([PSJobLogger]::StreamProgress) {
@@ -214,10 +221,13 @@ class PSJobLogger {
         if ($null -eq $ArgumentMap -or $ArgumentMap.Count -eq 0) {
             return
         }
-        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $this.Streams.$([PSJobLogger]::StreamProgress)
+        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+            $this.Streams.$([PSJobLogger]::StreamProgress)
         if (-not($progressTable.ContainsKey($Id))) {
-            if (-not($progressTable.TryAdd($Id, [ConcurrentDictionary[String, PSObject]]::new()))) {
+            # FIXME: Find a better starting value than `5`
+            if (-not($progressTable.TryAdd($Id, [ConcurrentDictionary[String, PSObject]]::new($this.ConcurrencyLevel, 5)))) {
                 Write-Error "unable to add new key for ${Id}"
+                return
             }
         }
         [ConcurrentDictionary[String, PSObject]]$progressArgs = $progressTable.$Id
@@ -256,7 +266,8 @@ class PSJobLogger {
 
     [void]
     FlushProgressStream() {
-        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue = $this.Streams.$([PSJobLogger]::StreamProgress)
+        [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue =
+            $this.Streams.$([PSJobLogger]::StreamProgress)
         # write progress records
         foreach ($recordKey in $progressQueue.Keys) {
             if ($null -eq $progressQueue.$recordKey) {
@@ -343,7 +354,6 @@ class PSJobLogger {
 
     [ConcurrentDictionary[String,PSObject]]
     asDictLogger() {
-        $dictLogger = [ConcurrentDictionary[String, PSObject]]::new()
         $dictElements = @{
             Name = $this.Name
             Logfile = $this.Logfile
@@ -354,6 +364,7 @@ class PSJobLogger {
             DebugPref = $this.DebugPref
             VerbosePref = $this.VerbosePref
         }
+        $dictLogger = [ConcurrentDictionary[String, PSObject]]::new($this.ConcurrencyLevel, $dictElements.Keys.Count)
         foreach ($key in $dictElements.Keys) {
             if (-not($dictLogger.TryAdd($key, $dictElements.$key))) {
                 Write-Error "unable to add key ${key} to dict"
