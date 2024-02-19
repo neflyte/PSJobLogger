@@ -94,7 +94,7 @@ fabric.properties
 .vscode/
 
 # Log files from testing
-hack/*.Log
+hack/*.log
 
 # Module manifest
 PSJobLogger/PSJobLogger.psd1

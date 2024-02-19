@@ -6,10 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - TBA
 ### Added
-- Configure concurrency level for ConcurrentDictionary objects\
+- Configure concurrency level for ConcurrentDictionary objects
 
 ### Changed
-- ConcurrentDictionary objects are initialized with an initial size where possible+
+- ConcurrentDictionary objects are initialized with an initial size where possible
+- Lists are used instead of Arrays wherever possible
+- Use an `enum` type instead of individual variables for each log stream
 
 ### Removed
 

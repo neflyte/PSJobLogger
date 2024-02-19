@@ -21,18 +21,18 @@ if ($mp3Files.Length -eq 0) {
 }
 $filesToProcess = @()
 $counter = 1
-$mp3Files | ForEach-Object {
+foreach ($mp3File in $mp3Files) {
     $filesToProcess += @{
         Id = $counter
-        Name = $_.Name
-        FullName = $_.FullName
+        Name = $mp3File.Name
+        FullName = $mp3File.FullName
     }
     $counter++
 }
 Write-Output "Processing $($filesToProcess.Count) files using ${Threads} threads"
-# $mp3gainDefaultArgs = @('-e', '-r', '-c', '-k')
-$mp3gainDefaultArgs = @('-e', '-r', '-c', '-k', '-s', 'r')
-# $jobLog = Initialize-PSJobLoggerDict -Name 'Process-Mp3Files' -Logfile $Logfile -ProgressParentId 0
+# $mp3gainDefaultArgs = '-e', '-r', '-c', '-k'
+$mp3gainDefaultArgs = '-e', '-r', '-c', '-k', '-s', 'r'
+# $jobLog = Initialize-PSJobLoggerDict -Name 'Process-Mp3Files' -Logfile $Logfile -ProgressParentId 0 -EstimatedThreads $Threads
 $jobLog = Initialize-PSJobLogger -Name 'Process-Mp3Files' -Logfile $Logfile -ProgressParentId 0 -EstimatedThreads $Threads
 $dictLog = $jobLog.asDictLogger()
 Write-Progress -Id 0 -Activity 'Processing' -Status 'Starting jobs'
@@ -105,8 +105,9 @@ $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel
 while ($job.State -eq 'Running') {
     # show progress of jobs
     $childJobCount = $job.ChildJobs.Count
-    $finishedJobs = ($job.ChildJobs | Where-Object State -EQ 'Completed').Count
-    Write-Progress -Id 0 -Activity 'Processing' -Status "${finishedJobs}/${childJobCount} files" -PercentComplete (($finishedJobs / $childJobCount) * 100)
+    $finishedJobs = $job.ChildJobs.Where{ $_.State -eq 'Completed' }
+    $finishedJobCount = $finishedJobs.Count
+    Write-Progress -Id 0 -Activity 'Processing' -Status "${finishedJobCount}/${childJobCount} files" -PercentComplete (($finishedJobCount / $childJobCount) * 100)
     # flush progress stream
     # Show-LogProgress -LogDict $jobLog
     $jobLog.FlushProgressStream()
