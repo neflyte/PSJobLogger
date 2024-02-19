@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - TBA
+### Added
+- Configure concurrency level for ConcurrentDictionary objects\
+
+### Changed
+- ConcurrentDictionary objects are initialized with an initial size where possible+
+
+### Removed
+
 ## [0.5.0] - 2023-12-30
 ### Added
 - Method to flush Plain Text streams (i.e. all streams except Progress)

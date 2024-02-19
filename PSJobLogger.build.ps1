@@ -25,10 +25,10 @@ task Build-Manifest {
         Path = './PSJobLogger/PSJobLogger.psd1'
         Guid = '7f941218-c9c8-409a-9406-454b0a7116f6'
         Author = 'Alan Lew'
-        Copyright = '(c) 2023 Alexander W Lew. All Rights Reserved.'
+        Copyright = '(c) 2024 Alexander W Lew. All Rights Reserved.'
         CompanyName = 'Alan Lew'
         RootModule = 'PSJobLogger.psm1'
-        ModuleVersion = '0.5.0'
+        ModuleVersion = '0.6.0'
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.1'
         NestedModules = @(
@@ -56,17 +56,10 @@ task Build-Manifest {
         CmdletsToExport = @()
         AliasesToExport = @()
         VariablesToExport = @(
-            'PSJobLoggerStreamSuccess',
-            'PSJobLoggerStreamError',
-            'PSJobLoggerStreamWarning',
-            'PSJobLoggerStreamVerbose',
-            'PSJobLoggerStreamDebug',
-            'PSJobLoggerStreamInformation',
-            'PSJobLoggerStreamHost',
-            'PSJobLoggerStreamProgress',
-            'PSJobLoggerLogStreams'
-            'PSJobLoggerPlainTextLogStreams'
+            'PSJLLogStreams',
+            'PSJLPlainTextLogStreams'
         )
+        ModuleList = 'DictLogger.psm1'
         FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1', 'en-US/about_PSJobLogger.help.txt'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
         ProjectUri = 'https://github.com/neflyte/PSJobLogger'

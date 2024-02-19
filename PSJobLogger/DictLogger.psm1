@@ -5,7 +5,9 @@ function Initialize-PSJobLoggerDict {
     [CmdletBinding()]
     [OutputType([ConcurrentDictionary[String, PSObject]])]
     param(
+        [ValidateNotNull()]
         [String]$Name = 'PSJobLogger',
+        [ValidateNotNull()]
         [String]$Logfile = '',
         [Switch]$UseQueues,
         [int]$ProgressParentId = -1,
@@ -23,38 +25,43 @@ function Initialize-PSJobLoggerDict {
         DebugPref = $DebugPreference
         UseQueues = $UseQueues
         ProgressParentId = $ProgressParentId
+        ConcurrencyLevel = $concurrencyLevel
+        Streams = [ConcurrentDictionary[int, ICollection]]$null
     }
-    [ConcurrentDictionary[String, PSObject]]$logDict = [ConcurrentDictionary[String, PSObject]]::new($concurrencyLevel, $dictElements.Keys.Count + 1)
-    foreach ($key in $dictElements.Keys) {
-        if (-not($logDict.TryAdd($key, $dictElements.$key))) {
-            Write-Error "could not add element ${key} to dict"
+    [ConcurrentDictionary[String, PSObject]]$logDict =
+        [ConcurrentDictionary[String, PSObject]]::new($concurrencyLevel, $dictElements.Count)
+    $enumerator = $dictElements.GetEnumerator()
+    while ($enumerator.MoveNext()) {
+        if (-not($logDict.TryAdd($enumerator.Current.Key, $enumerator.Current.Value))) {
+            Write-Error "could not add element $($enumerator.Current.Key) to dict"
         }
     }
     if ($Logfile -ne '' -and -not(Test-Path $Logfile)) {
-        $null = New-Item $Logfile -ItemType File -Force -ErrorAction SilentlyContinue
+        New-Item $Logfile -ItemType File -Force -ErrorAction SilentlyContinue | Out-Null
         if (-not($Error[0])) {
             $logDict.ShouldLogToFile = $true
         }
     }
-    $streams = [ConcurrentDictionary[int, ICollection]]::new($concurrencyLevel, $PSJobLoggerLogStreams.Keys.Count)
-    foreach ($stream in $PSJobLoggerLogStreams.Keys) {
+    $logDict.Streams = [ConcurrentDictionary[int, ICollection]]::new($concurrencyLevel, $PSJLLogStreams.Count)
+    foreach ($stream in $PSJLLogStreams) {
         switch ($stream) {
-            $PSJobLoggerStreamProgress {
-                if (-not($streams.TryAdd($stream, [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new()))) {
+            ([PSJLStreams]::Progress) {
+                # TODO: Find a better starting value than `5`
+                if (-not($logDict.Streams.TryAdd(
+                    $stream,
+                    [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new($concurrencyLevel, 5))
+                )) {
                     Write-Error 'could not create new ConcurrentDictionary for progress stream'
                 }
             }
             default {
                 if ($UseQueues) {
-                    if (-not($streams.TryAdd($stream, [ConcurrentQueue[String]]::new()))) {
-                        Write-Error "could not create new ConcurrentQueue for $($PSJobLoggerLogStreams.$stream) stream"
+                    if (-not($logDict.Streams.TryAdd($stream, [ConcurrentQueue[String]]::new()))) {
+                        Write-Error "could not create new ConcurrentQueue for $([PSJLStreams]::GetName($stream)) stream"
                     }
                 }
             }
         }
-    }
-    if (-not($logDict.TryAdd('Streams', $streams))) {
-        Write-Error 'could not add streams to dict'
     }
     return $logDict
 }
@@ -62,14 +69,18 @@ function Initialize-PSJobLoggerDict {
 function Set-Logfile {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [ValidateNotNull()]
         [String]$Filename
     )
     if ($Filename -ne '' -and -not(Test-Path $Filename)) {
-        $null = New-Item $Filename -ItemType File -Force -ErrorAction 'SilentlyContinue'
+        New-Item $Filename -ItemType File -Force -ErrorAction 'SilentlyContinue' | Out-Null
         if ($Error[0]) {
             $logfileError = $Error[0]
             Write-Error "Unable to create log file ${Filename}: ${logfileError}"
+            $LogDict.ShouldLogToFile = $false
             return
         }
     }
@@ -80,9 +91,18 @@ function Set-Logfile {
 function Write-MessageToLogfile {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][int]$Stream,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateScript(
+            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            ErrorMessage = "Stream key {0} is invalid"
+        )]
+        [int]$Stream,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
     if ($LogDict.ShouldLogToFile) {
         Add-Content -Path $LogDict.Logfile -Value $(Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message) -ErrorAction 'Continue'
@@ -93,27 +113,44 @@ function Format-LogMessage {
     [CmdletBinding()]
     [OutputType([String])]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][int]$Stream,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateScript(
+            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            ErrorMessage = "Stream key {0} is invalid"
+        )]
+        [int]$Stream,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
     return $(Get-Date -Format FileDateUniversal -ErrorAction 'Continue'),
             "[$($LogDict.Name)]",
-            "($($PSJobLoggerLogStreams.$Stream))",
+            "($([PSJLStreams]::GetName($Stream))",
             $Message -join ' '
 }
 
 function Add-LogMessageToQueue {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][int]$Stream,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateScript(
+            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            ErrorMessage = "Stream key {0} is invalid"
+        )]
+        [int]$Stream,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
     Write-MessageToLogfile -LogDict $LogDict -Stream $Stream -Message $Message
     if ($LogDict.UseQueues) {
-        [ConcurrentQueue[String]]$messageQueue = $LogDict.Streams.$Stream
-        $messageQueue.Enqueue($Message)
+        $LogDict.Streams.$Stream.Enqueue($Message)
     }
     Write-LogMessagesToStream -Stream $Stream -Messages @($Message)
 }
@@ -121,53 +158,77 @@ function Add-LogMessageToQueue {
 function Write-LogOutput {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamSuccess -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Success) -Message $Message
 }
 
 function Write-LogError {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamError -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Error) -Message $Message
 }
 
 function Write-LogWarning {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamWarning -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Warning) -Message $Message
 }
 
 function Write-LogVerbose {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamVerbose -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Verbose) -Message $Message
 }
 
 function Write-LogDebug {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamDebug -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Debug) -Message $Message
 }
 
 function Write-LogInformation {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
     Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamInformation -Message $Message
 }
@@ -175,8 +236,12 @@ function Write-LogInformation {
 function Write-LogHost {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Message
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Message
     )
     Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamHost -Message $Message
 }
@@ -184,30 +249,35 @@ function Write-LogHost {
 function Write-LogProgress {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][String]$Id,
-        [Parameter(Mandatory)][Hashtable]$ArgumentMap
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String]$Id,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [Hashtable]$ArgumentMap
     )
-    if ($null -eq $ArgumentMap) {
-        Write-Error 'ArgumentMap cannot be null'
-        return
-    }
-    [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $LogDict.Streams.$PSJobLoggerStreamProgress
-    [ConcurrentDictionary[String, PSObject]]$progressArgs = $progressTable.GetOrAdd($Id, [ConcurrentDictionary[String, PSObject]]::new())
-    foreach ($key in $ArgumentMap.Keys) {
-        if ($null -eq $ArgumentMap.$key -and $progressArgs.ContainsKey($key)) {
-            [PSObject]$removedValue = $null
-            if (-not($progressArgs.TryRemove($key, [ref]$removedValue))) {
-                Write-Error "could not remove key ${key} from progress arg map"
+    [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+        $LogDict.Streams.$([PSJLStreams]::Progress)
+    [ConcurrentDictionary[String, PSObject]]$progressArgs =
+        $progressTable.GetOrAdd($Id, [ConcurrentDictionary[String, PSObject]]::new())
+    [PSObject]$removedValue = $null
+    $enumerator = $ArgumentMap.GetEnumerator()
+    while ($enumerator.MoveNext()) {
+        if ($null -eq $enumerator.Current.Value -and $progressArgs.ContainsKey($enumerator.Current.Key)) {
+            if (-not($progressArgs.TryRemove($enumerator.Current.Key, [ref]$removedValue))) {
+                Write-Error "could not remove key $($enumerator.Current.Key) from progress arg map"
             }
             continue
         }
-        $progressArgs.$key = $ArgumentMap.$key
+        $progressArgs.$($enumerator.Current.Key) = $enumerator.Current.Value
     }
     $progressParentId = $LogDict.GetOrAdd('ProgressParentId', -1)
     if ($progressParentId -ge 0) {
         if (-not($progressArgs.ContainsKey('ParentId'))) {
-            $null = $progressArgs.TryAdd('ParentId', $progressParentId)
+            $progressArgs.TryAdd('ParentId', $progressParentId) | Out-Null
         } else {
             $progressArgs.ParentId = $progressParentId
         }
@@ -217,23 +287,28 @@ function Write-LogProgress {
 function Show-LogProgress {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict
     )
-    [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue = $LogDict.Streams.$PSJobLoggerStreamProgress
+    [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue =
+        $LogDict.Streams.$([PSJLStreams]::Progress)
     # write progress records
-    foreach ($recordKey in $progressQueue.Keys) {
-        if ($null -eq $progressQueue.$recordKey) {
+    [ConcurrentDictionary[String, PSObject]]$removed = $null
+    $enumerator = $progressQueue.GetEnumerator()
+    while ($enumerator.MoveNext()) {
+        if ($null -eq $enumerator.Current.Value) {
             Write-Warning "no queue record for ${recordKey}; skipping it"
             continue
         }
-        $progressArgs = $progressQueue.$recordKey
+        $progressArgs = $enumerator.Current.Value
         if ($null -ne $progressArgs.Id -and $null -ne $progressArgs.Activity -and $progressArgs.Activity -ne '') {
             Write-Progress @progressArgs -ErrorAction 'Continue'
         }
         # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
         if ($progressArgs.GetOrAdd('Completed', $false)) {
-            if (-not($progressQueue.TryRemove($recordKey, [ref]@{}))) {
-                Write-Error "failed to remove progress stream record ${recordKey}"
+            if (-not($progressQueue.TryRemove($enumerator.Current.Key, [ref]$removed))) {
+                Write-Error "failed to remove progress stream record $($enumerator.Current.Key)"
             }
         }
     }
@@ -242,10 +317,17 @@ function Show-LogProgress {
 function Show-LogFromOneStream {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict,
-        [Parameter(Mandatory)][int]$Stream
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict,
+        [Parameter(Mandatory)]
+        [ValidateScript(
+            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            ErrorMessage = "Stream key {0} is invalid"
+        )]
+        [int]$Stream
     )
-    if ($Stream -eq $PSJobLoggerStreamProgress) {
+    if ($Stream -eq [PSJLStreams]::Progress) {
         Show-LogProgress -LogDict $LogDict
         return
     }
@@ -257,7 +339,7 @@ function Show-LogFromOneStream {
     $dequeuedMessage = ''
     while ($messageQueue.Count -gt 0) {
         if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
-            Write-Error "unable to dequeue message from $($PSJobLoggerLogStreams.$Stream); queue count = $($messageQueue.Count)"
+            Write-Error "unable to dequeue message from $([PSJLStreams]::GetName($Stream)); queue count = $($messageQueue.Count)"
             break
         }
         $messages += $dequeuedMessage
@@ -269,9 +351,11 @@ function Show-LogFromOneStream {
 function Show-Log {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict
     )
-    foreach ($stream in $PSJobLoggerLogStreams.Keys) {
+    foreach ($stream in $PSJLLogStreams) {
         Show-LogFromOneStream -LogDict $LogDict -Stream $stream
     }
 }
@@ -279,9 +363,11 @@ function Show-Log {
 function Show-PlainTextLog {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ConcurrentDictionary[String, PSObject]]$LogDict
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [ConcurrentDictionary[String, PSObject]]$LogDict
     )
-    foreach ($stream in $PSJobLoggerPlainTextLogStreams.Keys) {
+    foreach ($stream in $PSJLPlainTextLogStreams) {
         Show-LogFromOneStream -LogDict $LogDict -Stream $stream
     }
 }
@@ -289,38 +375,45 @@ function Show-PlainTextLog {
 function Write-LogMessagesToStream {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][int]$Stream,
-        [Parameter(Mandatory)][String[]]$Messages
+        [Parameter(Mandatory)]
+        [ValidateScript(
+            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            ErrorMessage = "Stream key {0} is invalid"
+        )]
+        [int]$Stream,
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [String[]]$Messages
     )
     foreach ($message in $Messages) {
         $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
         switch ($Stream) {
-            ($PSJobLoggerStreamSuccess) {
+            ([PSJLStreams]::Success) {
                 Write-Output -InputObject $formattedMessage -ErrorAction 'Continue'
             }
-            ($PSJobLoggerStreamError) {
+            ([PSJLStreams]::Error) {
                 Write-Error -Message $formattedMessage
             }
-            ($PSJobLoggerStreamWarning) {
+            ([PSJLStreams]::Warning) {
                 Write-Warning -Message $formattedMessage -ErrorAction 'Continue'
             }
-            ($PSJobLoggerStreamVerbose) {
+            ([PSJLStreams]::Verbose) {
                 $VerbosePreference = $LogDict.VerbosePref
                 Write-Verbose -Message $formattedMessage -ErrorAction 'Continue'
             }
-            ($PSJobLoggerStreamDebug) {
+            ([PSJLStreams]::Debug) {
                 $DebugPreference = $LogDict.DebugPref
                 Write-Debug -Message $formattedMessage -ErrorAction 'Continue'
             }
-            ($PSJobLoggerStreamInformation) {
+            ([PSJLStreams]::Information) {
                 Write-Information -MessageData $formattedMessage -ErrorAction 'Continue'
             }
-            ($PSJobLoggerStreamHost) {
+            ([PSJLStreams]::Host) {
                 $formattedMessage | Out-Host -ErrorAction 'Continue'
             }
-            ($PSJobLoggerStreamProgress) {
+            ([PSJLStreams]::Progress) {
                 # The Progress stream is handled in a different function
-                Write-Error "reached PSJobLoggerStreamProgress in Write-LogMessagesToStream; this is unexpected. message: ${formattedMessage}"
+                Write-Error "unexpected [PSJLStreams]::Progress stream; message: ${formattedMessage}"
             }
             default {
                 Write-Error "unexpected stream ${Stream}; message: ${formattedMessage}"
