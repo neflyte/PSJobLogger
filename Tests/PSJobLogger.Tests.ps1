@@ -9,7 +9,7 @@ InModuleScope PSJobLogger {
 
     Describe 'PSJobLogger' {
         BeforeEach {
-            $logger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ProgressParentId:-1 -EstimatedThreads:-1
+            $logger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ProgressParentId -1 -EstimatedThreads -1
         }
 
         Context 'constructor' {
@@ -19,6 +19,8 @@ InModuleScope PSJobLogger {
                 $logger.UseQueues | Should -BeTrue
                 $logger.Logfile | Should -BeExactly ''
                 $logger.ShouldLogToFile | Should -BeFalse
+                $logger.ProgressParentId | Should -BeExactly -1
+                $logger.ConcurrencyLevel | Should -Be ([Environment]::ProcessorCount * 2)
                 $logger.VerbosePref | Should -BeExactly 'SilentlyContinue'
                 $logger.DebugPref | Should -BeExactly 'SilentlyContinue'
                 $logger.Streams.Keys.Count | Should -Be $([PSJLStreams].GetEnumNames()).Count
@@ -193,8 +195,10 @@ InModuleScope PSJobLogger {
                 $jobLogger.UseQueues | Should -BeTrue
                 $jobLogger.Logfile | Should -BeExactly ''
                 $jobLogger.ShouldLogToFile | Should -BeFalse
-                $logger.VerbosePref | Should -BeExactly 'SilentlyContinue'
-                $logger.DebugPref | Should -BeExactly 'SilentlyContinue'
+                $jobLogger.ProgressParentId | Should -BeExactly -1
+                $jobLogger.ConcurrencyLevel | Should -Be ([Environment]::ProcessorCount * 2)
+                $jobLogger.VerbosePref | Should -BeExactly 'SilentlyContinue'
+                $jobLogger.DebugPref | Should -BeExactly 'SilentlyContinue'
                 $jobLogger.Streams.Keys.Count | Should -Be $([PSJLStreams].GetEnumNames()).Count
                 $jobLogger.Streams.Keys | ForEach-Object {
                     switch ($_) {

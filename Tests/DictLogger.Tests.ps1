@@ -21,6 +21,7 @@ InModuleScope PSJobLogger {
                 $logger.DebugPref | Should -BeExactly 'SilentlyContinue'
                 $logger.UseQueues | Should -BeTrue
                 $logger.ProgressParentId | Should -BeExactly -1
+                $logger.ConcurrencyLevel | Should -Be ([Environment]::ProcessorCount * 2)
                 $logger.Streams | Should -Not -BeNullOrEmpty
                 $logger.Streams.Keys.Count | Should -BeExactly $([PSJLStreams].GetEnumNames()).Count
                 foreach ($stream in $logger.Streams.Keys) {

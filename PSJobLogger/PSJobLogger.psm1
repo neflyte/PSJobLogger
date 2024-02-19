@@ -201,7 +201,9 @@ class PSJobLogger {
             return
         }
         # Write the message to the appropriate stream
-        $this.FlushMessages($Stream, @($Message))
+        [List[String]]$messages = [List[String]]::new()
+        $messages.Add($Message)
+        $this.FlushMessages($Stream, $messages)
     }
 
     [void]
@@ -242,14 +244,14 @@ class PSJobLogger {
     [void]
     FlushStreams() {
         foreach ($stream in $global:PSJLLogStreams) {
-            $this.FlushOneStream($stream)
+            $this.FlushOneStream([int]$stream)
         }
     }
 
     [void]
     FlushPlainTextStreams() {
         foreach ($stream in $global:PSJLPlainTextLogStreams) {
-            $this.FlushOneStream($stream)
+            $this.FlushOneStream([int]$stream)
         }
     }
 
@@ -297,21 +299,21 @@ class PSJobLogger {
         }
         # Drain the queue for the stream
         $dequeuedMessage = ''
-        [String[]]$messages = @()
+        [List[String]]$messages = [List[String]]::new()
         [ConcurrentQueue[String]]$messageQueue = $this.Streams.$Stream
         while ($messageQueue.Count -gt 0) {
             if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
                 Write-Error "FlushOneStream(): unable to dequeue message from $([PSJLStreams].GetEnumName($Stream)); queue count = $($messageQueue.Count)"
                 break
             }
-            $messages += $dequeuedMessage
+            $messages.Add($dequeuedMessage)
         }
         # write messages to the desired stream
         $this.FlushMessages($Stream, $messages)
     }
 
     [void]
-    FlushMessages([int]$Stream, [String[]]$Messages) {
+    FlushMessages([int]$Stream, [List[String]]$Messages) {
         if ($null -eq $Messages -or -not($this.IsValidStream($Stream))) {
             return
         }

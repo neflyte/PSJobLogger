@@ -153,7 +153,9 @@ function Add-LogMessageToQueue {
         return
     }
     # Write the message to the appropriate stream
-    Write-LogMessagesToStream -Stream $Stream -Messages @($Message)
+    [List[String]]$messages = [List[String]]::new()
+    $messages.Add($Message)
+    Write-LogMessagesToStream -Stream $Stream -Messages $messages
 }
 
 function Write-LogOutput {
@@ -330,7 +332,7 @@ function Show-LogFromOneStream {
     if (-not($LogDict.UseQueues)) {
         return
     }
-    [String[]]$messages = @()
+    [List[String]]$messages = [List[String]]::new()
     [ConcurrentQueue[String]]$messageQueue = $LogDict.Streams.$Stream
     $dequeuedMessage = ''
     while ($messageQueue.Count -gt 0) {
@@ -338,7 +340,7 @@ function Show-LogFromOneStream {
             Write-Error "unable to dequeue message from $([PSJLStreams].GetEnumName($Stream)); queue count = $($messageQueue.Count)"
             break
         }
-        $messages += $dequeuedMessage
+        $messages.Add($dequeuedMessage)
     }
     # write messages to the desired stream
     Write-LogMessagesToStream -Stream $Stream -Messages $messages
@@ -352,7 +354,7 @@ function Show-Log {
         [ConcurrentDictionary[String, PSObject]]$LogDict
     )
     foreach ($stream in $PSJLLogStreams) {
-        Show-LogFromOneStream -LogDict $LogDict -Stream $stream
+        Show-LogFromOneStream -LogDict $LogDict -Stream [int]$stream
     }
 }
 
@@ -364,7 +366,7 @@ function Show-PlainTextLog {
         [ConcurrentDictionary[String, PSObject]]$LogDict
     )
     foreach ($stream in $PSJLPlainTextLogStreams) {
-        Show-LogFromOneStream -LogDict $LogDict -Stream $stream
+        Show-LogFromOneStream -LogDict $LogDict -Stream [int]$stream
     }
 }
 
@@ -379,7 +381,7 @@ function Write-LogMessagesToStream {
         [int]$Stream,
         [Parameter(Mandatory)]
         [ValidateNotNull()]
-        [String[]]$Messages
+        [List[String]]$Messages
     )
     foreach ($message in $Messages) {
         $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
