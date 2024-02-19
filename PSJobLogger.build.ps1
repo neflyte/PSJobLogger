@@ -5,12 +5,14 @@ task Clean {
 }
 
 task Lint {
-    Invoke-ScriptAnalyzer -Path ./PSJobLogger -Settings ./PSScriptAnalyzerSettings.psd1
+    Invoke-ScriptAnalyzer -Path (Join-Path $PWD 'PSJobLogger') -Settings ./PSScriptAnalyzerSettings.psd1
 }
 
 task Test {
-    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-    Import-Module ./PSJobLogger -Force
+    if (Get-Module PSJobLogger) {
+        Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    }
+    Import-Module (Join-Path $PWD 'PSJobLogger') -Force
     Invoke-Pester
 }
 
@@ -40,6 +42,7 @@ task Build-Manifest {
             'Format-LogMessage',
             'Initialize-PSJobLogger',
             'Initialize-PSJobLoggerDict',
+            'Set-Logfile',
             'Show-LogProgress',
             'Show-LogFromOneStream',
             'Show-Log',
@@ -70,8 +73,10 @@ task Build-Manifest {
 }
 
 task Mp3test {
-    Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
-    Import-Module ./PSJobLogger -Force
+    if (Get-Module PSJobLogger) {
+        Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    }
+    Import-Module (Join-Path $PWD 'PSJobLogger') -Force
     Push-Location hack
     try {
         Remove-Item test.log -Force -ErrorAction SilentlyContinue

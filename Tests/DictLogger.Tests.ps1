@@ -8,7 +8,7 @@ InModuleScope PSJobLogger {
     }
     Describe 'DictLogger' {
         BeforeEach {
-            $logger = Initialize-PSJobLoggerDict -Name $LoggerName -LogFile '' -UseQueues -ProgressParentId -1
+            $logger = Initialize-PSJobLoggerDict -Name $LoggerName -LogFile '' -UseQueues -ProgressParentId -1 -EstimatedThreads -1
         }
 
         Context 'Initialize-PSJobLoggerDict' {
@@ -22,11 +22,12 @@ InModuleScope PSJobLogger {
                 $logger.UseQueues | Should -BeTrue
                 $logger.ProgressParentId | Should -BeExactly -1
                 $logger.Streams | Should -Not -BeNullOrEmpty
-                $logger.Streams.Keys.Count | Should -BeExactly $PSJobLoggerLogStreams.Count
+                $logger.Streams.Keys.Count | Should -BeExactly $([PSJLStreams].GetEnumNames()).Count
                 foreach ($stream in $logger.Streams.Keys) {
                     switch ($stream) {
-                        $PSJobLoggerStreamProgress {
-                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $logger.Streams.$stream
+                        $([int]([PSJLStreams]::Progress)) {
+                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                                $logger.Streams.$stream
                             $progressTable.Count | Should -BeExactly 0
                         }
                         default {
@@ -41,7 +42,8 @@ InModuleScope PSJobLogger {
         Context 'Write-LogProgress' {
             It 'adds a new map' {
                 Write-LogProgress -LogDict $logger -Id 'foo' -ArgumentMap @{ Id = 1; Activity = 'bar' }
-                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $logger.Streams.$PSJobLoggerStreamProgress
+                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                    $logger.Streams.$([int]([PSJLStreams]::Progress))
                 $progressTable.Keys.Count | Should -Be 1
                 $progressTable.Keys[0]| Should -Be 'foo'
                 [ConcurrentDictionary[String, PSObject]]$progressArgs = $progressTable.foo
@@ -53,7 +55,8 @@ InModuleScope PSJobLogger {
                 # write a progress entry
                 Write-LogProgress -LogDict $logger -Id 'foo' -ArgumentMap @{ Id = 1; Activity = 'bar'; Status = 'fnord'; PercentComplete = -1 }
                 # validate it
-                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $logger.Streams.$PSJobLoggerStreamProgress
+                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                    $logger.Streams.$([int]([PSJLStreams]::Progress))
                 $progressTable.Keys.Count | Should -Be 1
                 $progressTable.Keys[0]| Should -Be 'foo'
                 [ConcurrentDictionary[String, PSObject]]$progressArgs = $progressTable.foo
@@ -65,7 +68,7 @@ InModuleScope PSJobLogger {
                 # update the existing map
                 Write-LogProgress -LogDict $logger -Id 'foo' -ArgumentMap @{ Completed = $true }
                 # validate the update
-                $progressTable = $logger.Streams.$PSJobLoggerStreamProgress
+                $progressTable = $logger.Streams.$([int]([PSJLStreams]::Progress))
                 $progressTable.Keys.Count | Should -Be 1
                 $progressTable.Keys[0]| Should -Be 'foo'
                 $progressArgs = $progressTable.foo
@@ -78,7 +81,7 @@ InModuleScope PSJobLogger {
                 # update the map and remove a key
                 Write-LogProgress -LogDict $logger -Id 'foo' -ArgumentMap @{ PercentComplete = $null; Activity = 'zot'; Status = 'baz' }
                 # validate the update
-                $progressTable = $logger.Streams.$PSJobLoggerStreamProgress
+                $progressTable = $logger.Streams.$([int]([PSJLStreams]::Progress))
                 $progressTable.Keys.Count | Should -Be 1
                 $progressTable.Keys[0]| Should -Be 'foo'
                 $progressArgs = $progressTable.foo
@@ -93,10 +96,10 @@ InModuleScope PSJobLogger {
 
         Context 'Write-LogOutput' {
             It 'enqueues a message' {
-                $successTable = $logger.Streams.$PSJobLoggerStreamSuccess
+                $successTable = $logger.Streams.$([int]([PSJLStreams]::Success))
                 $successTable.Count | Should -BeExactly 0
                 Write-LogOutput -LogDict $logger -Message 'foo'
-                $successTable = $logger.Streams.$PSJobLoggerStreamSuccess
+                $successTable = $logger.Streams.$([int]([PSJLStreams]::Success))
                 $successTable.Count | Should -BeExactly 1
                 $successTable[0] | Should -Contain 'foo'
             }

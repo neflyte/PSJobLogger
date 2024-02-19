@@ -1,3 +1,4 @@
+using module ./PSJobLogger.psm1
 using namespace System.Collections
 using namespace System.Collections.Concurrent
 
@@ -36,19 +37,14 @@ function Initialize-PSJobLoggerDict {
             Write-Error "could not add element $($enumerator.Current.Key) to dict"
         }
     }
-    if ($Logfile -ne '' -and -not(Test-Path $Logfile)) {
-        New-Item $Logfile -ItemType File -Force -ErrorAction SilentlyContinue | Out-Null
-        if (-not($Error[0])) {
-            $logDict.ShouldLogToFile = $true
-        }
-    }
+    Set-Logfile -LogDict $logDict -Filename $Logfile
     $logDict.Streams = [ConcurrentDictionary[int, ICollection]]::new($concurrencyLevel, $PSJLLogStreams.Count)
     foreach ($stream in $PSJLLogStreams) {
-        switch ($stream) {
-            ([PSJLStreams]::Progress) {
+        switch ([int]$stream) {
+            ([int]([PSJLStreams]::Progress)) {
                 # TODO: Find a better starting value than `5`
                 if (-not($logDict.Streams.TryAdd(
-                    $stream,
+                    [int]$stream,
                     [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]::new($concurrencyLevel, 5))
                 )) {
                     Write-Error 'could not create new ConcurrentDictionary for progress stream'
@@ -56,8 +52,8 @@ function Initialize-PSJobLoggerDict {
             }
             default {
                 if ($UseQueues) {
-                    if (-not($logDict.Streams.TryAdd($stream, [ConcurrentQueue[String]]::new()))) {
-                        Write-Error "could not create new ConcurrentQueue for $([PSJLStreams]::GetName($stream)) stream"
+                    if (-not($logDict.Streams.TryAdd([int]$stream, [ConcurrentQueue[String]]::new()))) {
+                        Write-Error "could not create new ConcurrentQueue for $([PSJLStreams].GetEnumName($stream)) stream"
                     }
                 }
             }
@@ -76,7 +72,7 @@ function Set-Logfile {
         [String]$Filename
     )
     if ($Filename -ne '' -and -not(Test-Path $Filename)) {
-        New-Item $Filename -ItemType File -Force -ErrorAction 'SilentlyContinue' | Out-Null
+        $null = New-Item $Filename -ItemType File -Force -ErrorAction 'SilentlyContinue'
         if ($Error[0]) {
             $logfileError = $Error[0]
             Write-Error "Unable to create log file ${Filename}: ${logfileError}"
@@ -96,7 +92,7 @@ function Write-MessageToLogfile {
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
         [ValidateScript(
-            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            { $_ -ge 0 -and $_ -lt [PSJLStreams].GetEnumNames().Count },
             ErrorMessage = "Stream key {0} is invalid"
         )]
         [int]$Stream,
@@ -118,7 +114,7 @@ function Format-LogMessage {
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
         [ValidateScript(
-            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            { $_ -ge 0 -and $_ -lt [PSJLStreams].GetEnumNames().Count },
             ErrorMessage = "Stream key {0} is invalid"
         )]
         [int]$Stream,
@@ -128,7 +124,7 @@ function Format-LogMessage {
     )
     return $(Get-Date -Format FileDateUniversal -ErrorAction 'Continue'),
             "[$($LogDict.Name)]",
-            "($([PSJLStreams]::GetName($Stream))",
+            "($([PSJLStreams].GetEnumName($Stream))",
             $Message -join ' '
 }
 
@@ -140,18 +136,23 @@ function Add-LogMessageToQueue {
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
         [ValidateScript(
-            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            { $_ -ge 0 -and $_ -lt [PSJLStreams].GetEnumNames().Count },
             ErrorMessage = "Stream key {0} is invalid"
         )]
         [int]$Stream,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
+    # Log the message to a logfile if one is defined
     Write-MessageToLogfile -LogDict $LogDict -Stream $Stream -Message $Message
+    # Add the message to the desired queue if queues are enabled
     if ($LogDict.UseQueues) {
-        $LogDict.Streams.$Stream.Enqueue($Message)
+        if ($null -ne $Message) {
+            $LogDict.Streams.$Stream.Enqueue($Message)
+        }
+        return
     }
+    # Write the message to the appropriate stream
     Write-LogMessagesToStream -Stream $Stream -Messages @($Message)
 }
 
@@ -162,10 +163,9 @@ function Write-LogOutput {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Success) -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Success)) -Message $Message
 }
 
 function Write-LogError {
@@ -175,10 +175,9 @@ function Write-LogError {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Error) -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Error)) -Message $Message
 }
 
 function Write-LogWarning {
@@ -188,10 +187,9 @@ function Write-LogWarning {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Warning) -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Warning)) -Message $Message
 }
 
 function Write-LogVerbose {
@@ -201,10 +199,9 @@ function Write-LogVerbose {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Verbose) -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Verbose)) -Message $Message
 }
 
 function Write-LogDebug {
@@ -214,10 +211,9 @@ function Write-LogDebug {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $([PSJLStreams]::Debug) -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Debug)) -Message $Message
 }
 
 function Write-LogInformation {
@@ -227,10 +223,9 @@ function Write-LogInformation {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamInformation -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Information)) -Message $Message
 }
 
 function Write-LogHost {
@@ -240,10 +235,9 @@ function Write-LogHost {
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
-        [ValidateNotNull()]
         [String]$Message
     )
-    Add-LogMessageToQueue -LogDict $LogDict -Stream $PSJobLoggerStreamHost -Message $Message
+    Add-LogMessageToQueue -LogDict $LogDict -Stream $([int]([PSJLStreams]::Host)) -Message $Message
 }
 
 function Write-LogProgress {
@@ -260,7 +254,7 @@ function Write-LogProgress {
         [Hashtable]$ArgumentMap
     )
     [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
-        $LogDict.Streams.$([PSJLStreams]::Progress)
+        $LogDict.Streams.$([int]([PSJLStreams]::Progress))
     [ConcurrentDictionary[String, PSObject]]$progressArgs =
         $progressTable.GetOrAdd($Id, [ConcurrentDictionary[String, PSObject]]::new())
     [PSObject]$removedValue = $null
@@ -276,10 +270,10 @@ function Write-LogProgress {
     }
     $progressParentId = $LogDict.GetOrAdd('ProgressParentId', -1)
     if ($progressParentId -ge 0) {
-        if (-not($progressArgs.ContainsKey('ParentId'))) {
-            $progressArgs.TryAdd('ParentId', $progressParentId) | Out-Null
-        } else {
+        if ($progressArgs.ContainsKey('ParentId')) {
             $progressArgs.ParentId = $progressParentId
+        } else {
+            $null = $progressArgs.TryAdd('ParentId', $progressParentId)
         }
     }
 }
@@ -292,21 +286,23 @@ function Show-LogProgress {
         [ConcurrentDictionary[String, PSObject]]$LogDict
     )
     [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressQueue =
-        $LogDict.Streams.$([PSJLStreams]::Progress)
+        $LogDict.Streams.$([int]([PSJLStreams]::Progress))
     # write progress records
     [ConcurrentDictionary[String, PSObject]]$removed = $null
+    $completed = $false
     $enumerator = $progressQueue.GetEnumerator()
     while ($enumerator.MoveNext()) {
         if ($null -eq $enumerator.Current.Value) {
-            Write-Warning "no queue record for ${recordKey}; skipping it"
+            Write-Warning "no queue record for $($enumerator.Current.Key); skipping it"
             continue
         }
-        $progressArgs = $enumerator.Current.Value
+        [ConcurrentDictionary[String, PSObject]]$progressArgs = $enumerator.Current.Value
         if ($null -ne $progressArgs.Id -and $null -ne $progressArgs.Activity -and $progressArgs.Activity -ne '') {
             Write-Progress @progressArgs -ErrorAction 'Continue'
         }
         # If the arguments included `Completed = $true`, remove the key from the progress stream dictionary
-        if ($progressArgs.GetOrAdd('Completed', $false)) {
+        $completed = $false
+        if ($progressArgs.TryGetValue('Completed', [ref]$completed) -and $completed) {
             if (-not($progressQueue.TryRemove($enumerator.Current.Key, [ref]$removed))) {
                 Write-Error "failed to remove progress stream record $($enumerator.Current.Key)"
             }
@@ -322,12 +318,12 @@ function Show-LogFromOneStream {
         [ConcurrentDictionary[String, PSObject]]$LogDict,
         [Parameter(Mandatory)]
         [ValidateScript(
-            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            { $_ -ge 0 -and $_ -lt [PSJLStreams].GetEnumNames().Count },
             ErrorMessage = "Stream key {0} is invalid"
         )]
         [int]$Stream
     )
-    if ($Stream -eq [PSJLStreams]::Progress) {
+    if ($Stream -eq [int]([PSJLStreams]::Progress)) {
         Show-LogProgress -LogDict $LogDict
         return
     }
@@ -339,7 +335,7 @@ function Show-LogFromOneStream {
     $dequeuedMessage = ''
     while ($messageQueue.Count -gt 0) {
         if (-not($messageQueue.TryDequeue([ref]$dequeuedMessage))) {
-            Write-Error "unable to dequeue message from $([PSJLStreams]::GetName($Stream)); queue count = $($messageQueue.Count)"
+            Write-Error "unable to dequeue message from $([PSJLStreams].GetEnumName($Stream)); queue count = $($messageQueue.Count)"
             break
         }
         $messages += $dequeuedMessage
@@ -377,7 +373,7 @@ function Write-LogMessagesToStream {
     param(
         [Parameter(Mandatory)]
         [ValidateScript(
-            { $_ -lt [PSJLStreams]::GetNames().Count - 1 },
+            { $_ -ge 0 -and $_ -lt [PSJLStreams].GetEnumNames().Count },
             ErrorMessage = "Stream key {0} is invalid"
         )]
         [int]$Stream,
@@ -388,35 +384,35 @@ function Write-LogMessagesToStream {
     foreach ($message in $Messages) {
         $formattedMessage = Format-LogMessage -LogDict $LogDict -Stream $Stream -Message $Message
         switch ($Stream) {
-            ([PSJLStreams]::Success) {
+            ([int]([PSJLStreams]::Success)) {
                 Write-Output -InputObject $formattedMessage -ErrorAction 'Continue'
             }
-            ([PSJLStreams]::Error) {
+            ([int]([PSJLStreams]::Error)) {
                 Write-Error -Message $formattedMessage
             }
-            ([PSJLStreams]::Warning) {
+            ([int]([PSJLStreams]::Warning)) {
                 Write-Warning -Message $formattedMessage -ErrorAction 'Continue'
             }
-            ([PSJLStreams]::Verbose) {
+            ([int]([PSJLStreams]::Verbose)) {
                 $VerbosePreference = $LogDict.VerbosePref
                 Write-Verbose -Message $formattedMessage -ErrorAction 'Continue'
             }
-            ([PSJLStreams]::Debug) {
+            ([int]([PSJLStreams]::Debug)) {
                 $DebugPreference = $LogDict.DebugPref
                 Write-Debug -Message $formattedMessage -ErrorAction 'Continue'
             }
-            ([PSJLStreams]::Information) {
+            ([int]([PSJLStreams]::Information)) {
                 Write-Information -MessageData $formattedMessage -ErrorAction 'Continue'
             }
-            ([PSJLStreams]::Host) {
+            ([int]([PSJLStreams]::Host)) {
                 $formattedMessage | Out-Host -ErrorAction 'Continue'
             }
-            ([PSJLStreams]::Progress) {
+            ([int]([PSJLStreams]::Progress)) {
                 # The Progress stream is handled in a different function
                 Write-Error "unexpected [PSJLStreams]::Progress stream; message: ${formattedMessage}"
             }
             default {
-                Write-Error "unexpected stream ${Stream}; message: ${formattedMessage}"
+                Write-Error "unexpected stream $([PSJLStreams].GetEnumName($Stream)); message: ${formattedMessage}"
             }
         }
     }

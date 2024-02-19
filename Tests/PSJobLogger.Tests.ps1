@@ -5,13 +5,11 @@ using namespace System.IO
 Import-Module (Join-Path $PSScriptRoot 'Helpers.psm1') -Force
 
 InModuleScope PSJobLogger {
-    BeforeAll {
-        $LoggerName = 'PSJobLogger-test'
-    }
+    $LoggerName = 'PSJobLogger-test'
 
     Describe 'PSJobLogger' {
         BeforeEach {
-            $logger = [PSJobLogger]::new($LoggerName, '', $true, -1)
+            $logger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ProgressParentId:-1 -EstimatedThreads:-1
         }
 
         Context 'constructor' {
@@ -23,11 +21,12 @@ InModuleScope PSJobLogger {
                 $logger.ShouldLogToFile | Should -BeFalse
                 $logger.VerbosePref | Should -BeExactly 'SilentlyContinue'
                 $logger.DebugPref | Should -BeExactly 'SilentlyContinue'
-                $logger.Streams.Keys.Count | Should -Be $([PSJobLogger]::LogStreams.Keys).Count
+                $logger.Streams.Keys.Count | Should -Be $([PSJLStreams].GetEnumNames()).Count
                 $logger.Streams.Keys | ForEach-Object {
                     switch ($_) {
-                        ([PSJobLogger]::StreamProgress) {
-                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $logger.Streams.$_
+                        ([int]([PSJLStreams]::Progress)) {
+                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                                $logger.Streams.$_
                             $progressTable.Count | Should -Be 0
                         }
                         default {
@@ -42,7 +41,8 @@ InModuleScope PSJobLogger {
         Context 'Progress' {
             It 'adds a new map' {
                 $logger.Progress('foo', @{ Id = 1; Activity = 'bar' })
-                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $logger.Streams.$([PSJobLogger]::StreamProgress)
+                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                    $logger.Streams.$([int]([PSJLStreams]::Progress))
                 $progressTable | Should -Not -BeNullOrEmpty
                 $progressTable.Keys.Count | Should -Be 1
                 $progressTable.Keys[0]| Should -Be 'foo'
@@ -52,7 +52,8 @@ InModuleScope PSJobLogger {
                 $progressArgs.Activity | Should -Be 'bar'
             }
             It 'updates a map' {
-                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $logger.Streams.$([PSJobLogger]::StreamProgress)
+                [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                    $logger.Streams.$([int]([PSJLStreams]::Progress))
                 $progressTable | Should -Not -BeNullOrEmpty
                 # write a progress entry
                 $logger.Progress('foo', @{ Id = 1; Activity = 'bar'; Status = 'fnord'; PercentComplete = -1 })
@@ -94,14 +95,14 @@ InModuleScope PSJobLogger {
 
         Context 'Output' {
             It 'enqueues a message' {
-                [ConcurrentQueue[String]]$successTable = $logger.Streams.$([PSJobLogger]::StreamSuccess)
+                [ConcurrentQueue[String]]$successTable = $logger.Streams.$([int]([PSJLStreams]::Success))
                 $successTable.Count | Should -Be 0
                 $logger.Output('foo')
                 $successTable.Count | Should -Be 1
                 $successTable[0] | Should -Be 'foo'
             }
             It 'flushes' {
-                [ConcurrentQueue[String]]$successTable = $logger.Streams.$([PSJobLogger]::StreamSuccess)
+                [ConcurrentQueue[String]]$successTable = $logger.Streams.$([int]([PSJLStreams]::Success))
                 $successTable.Count | Should -Be 0
                 $logger.Output('foo')
                 $successTable.Count | Should -Be 1
@@ -176,7 +177,7 @@ InModuleScope PSJobLogger {
             It 'converts from a class' {
                 $dictLogger = $logger.asDictLogger()
                 $dictLogger | Should -Not -BeNullOrEmpty
-                $expectedKeys = 'Name', 'Logfile', 'ShouldLogToFile', 'VerbosePref', 'DebugPref', 'UseQueues', 'ProgressParentId', 'Streams'
+                $expectedKeys = 'Name', 'Logfile', 'ShouldLogToFile', 'VerbosePref', 'DebugPref', 'UseQueues', 'ProgressParentId', 'ConcurrencyLevel', 'Streams'
                 foreach ($key in $expectedKeys) {
                     $dictLogger.ContainsKey($key) | Should -BeTrue
                     $dictLogger.$key | Should -Not -Be $null
@@ -186,7 +187,7 @@ InModuleScope PSJobLogger {
 
         Context 'Initialize-PSJobLogger' {
             It 'initializes' {
-                $jobLogger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ProgressParentId -1
+                $jobLogger = Initialize-PSJobLogger -Name $LoggerName -Logfile '' -UseQueues -ProgressParentId -1 -EstimatedThreads -1
                 $jobLogger | Should -Not -BeNullOrEmpty
                 $jobLogger.Name | Should -BeExactly $LoggerName
                 $jobLogger.UseQueues | Should -BeTrue
@@ -194,16 +195,17 @@ InModuleScope PSJobLogger {
                 $jobLogger.ShouldLogToFile | Should -BeFalse
                 $logger.VerbosePref | Should -BeExactly 'SilentlyContinue'
                 $logger.DebugPref | Should -BeExactly 'SilentlyContinue'
-                $jobLogger.Streams.Keys.Count | Should -Be $([PSJobLogger]::LogStreams.Keys).Count
+                $jobLogger.Streams.Keys.Count | Should -Be $([PSJLStreams].GetEnumNames()).Count
                 $jobLogger.Streams.Keys | ForEach-Object {
                     switch ($_) {
-                        ([PSJobLogger]::StreamProgress) {
-                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable = $jobLogger.Streams.$_
+                        ([int]([PSJLStreams]::Progress)) {
+                            [ConcurrentDictionary[String, ConcurrentDictionary[String, PSObject]]]$progressTable =
+                                $jobLogger.Streams.$_
                             $progressTable.Count | Should -Be 0
                         }
                         default {
                             [ConcurrentQueue[String]]$messageTable = $jobLogger.Streams.$_
-                            $messageTable.Keys.Count | Should -Be 0
+                            $messageTable.Count | Should -Be 0
                         }
                     }
                 }
