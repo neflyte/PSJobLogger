@@ -105,23 +105,25 @@ $job = $filesToProcess | ForEach-Object -ThrottleLimit $Threads -AsJob -Parallel
 while ($job.State -eq 'Running') {
     # show progress of jobs
     $childJobCount = $job.ChildJobs.Count
-    $finishedJobs = $job.ChildJobs.Where{ $_.State -eq 'Completed' }
-    $finishedJobCount = $finishedJobs.Count
-    Write-Progress -Id 0 -Activity 'Processing' -Status "${finishedJobCount}/${childJobCount} files" -PercentComplete (($finishedJobCount / $childJobCount) * 100)
+    if ($childJobCount -gt 0) {
+        $finishedJobs = $job.ChildJobs.Where{ $_.State -eq 'Completed' }
+        $finishedJobCount = $finishedJobs.Count
+        Write-Progress -Id 0 -Activity 'Processing' -Status "${finishedJobCount}/${childJobCount} files" -PercentComplete (($finishedJobCount / $childJobCount) * 100)
+    }
     # flush progress stream
     # Show-LogProgress -LogDict $jobLog
     $jobLog.FlushProgressStream()
     # small sleep to not overload the ui
     Start-Sleep -Seconds 0.1
 }
-# dismiss the parent progress bar
-Write-Progress -Id 0 -Activity 'Processing' -Completed
 # show job output
 Write-Output "Job output:"
 Receive-Job -Job $job -Wait -AutoRemoveJob
 # flush any remaining logs
 # Show-LogProgress -LogDict $jobLog
 $jobLog.FlushProgressStream()
+# dismiss the parent progress bar
+Write-Progress -Id 0 -Activity 'Processing' -Completed
 Write-Output "---"
 # all done.
 Write-Output 'done.'
