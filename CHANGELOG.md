@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ConcurrentDictionary objects are initialized with an initial size where possible
 - Lists are used instead of Arrays wherever possible
 - Use an `enum` type instead of individual variables for each log stream
+- Migrate unit tests to Pester v5
 
 ### Removed
 
