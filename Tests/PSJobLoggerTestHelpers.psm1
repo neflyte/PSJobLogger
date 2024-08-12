@@ -1,4 +1,4 @@
-using module ../PSJobLogger
+using module ../PSJobLogger/PSJobLogger.psm1
 using namespace System.Collections.Generic
 using namespace System.IO
 

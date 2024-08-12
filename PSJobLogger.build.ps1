@@ -9,8 +9,10 @@ task Lint {
 }
 
 task Test {
-    if (Get-Module PSJobLogger) {
-        Remove-Module PSJobLogger -Force -ErrorAction SilentlyContinue
+    foreach ($module in 'PSJobLogger','DictLogger','PSJLStreams','PSJLLogStreams','PSJobLoggerTestHelpers') {
+        if (Get-Module $module) {
+            Remove-Module $module -Force -ErrorAction Continue
+        }
     }
     Import-Module (Join-Path $PWD 'PSJobLogger') -Force
     Invoke-Pester
@@ -34,36 +36,37 @@ task Build-Manifest {
         Description = 'A logging class suitable for use with ForEach-Object -Parallel -AsJob'
         PowerShellVersion = '5.1'
         NestedModules = @(
-            'DictLogger.psm1'
+            'DictLogger.psm1',
+            'PSJLLogStreams.psm1',
+            'PSJLStreams.psm1'
         )
         FunctionsToExport = @(
-            'Add-LogMessageToQueue',
+            # PSJobLogger.psm1
             'ConvertFrom-DictLogger',
-            'Format-LogMessage',
             'Initialize-PSJobLogger',
+            # DictLogger.psm1
+            'Add-LogMessageToQueue',
+            'Format-LogMessage',
             'Initialize-PSJobLoggerDict',
             'Set-Logfile',
-            'Show-LogProgress',
-            'Show-LogFromOneStream',
             'Show-Log',
-            'Write-MessageToLogfile',
-            'Write-LogOutput',
-            'Write-LogError',
-            'Write-LogWarning',
-            'Write-LogVerbose',
+            'Show-LogFromOneStream',
+            'Show-LogProgress',
             'Write-LogDebug',
+            'Write-LogError',
             'Write-LogInformation',
+            'Write-LogMessagesToStream',
+            'Write-LogOutput',
             'Write-LogProgress',
-            'Write-LogMessagesToStream'
+            'Write-LogVerbose',
+            'Write-LogWarning',
+            'Write-MessageToLogfile'
         )
         CmdletsToExport = @()
         AliasesToExport = @()
-        VariablesToExport = @(
-            'PSJLLogStreams',
-            'PSJLPlainTextLogStreams'
-        )
-        ModuleList = 'DictLogger.psm1'
-        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1', 'DictLogger.psm1', 'en-US/about_PSJobLogger.help.txt'
+        VariablesToExport = @()
+        ModuleList = 'DictLogger.psm1','PSJLStreams.psm1','PSJLLogStreams.psm1'
+        FileList = 'PSJobLogger.psd1','PSJobLogger.psm1','DictLogger.psm1','PSJLStreams.psm1','PSJLLogStreams.psm1','en-US/about_PSJobLogger.help.txt'
         Tags = 'ForEach-Object','Parallel','AsJob','Logging','PSEdition_Core','Windows','Linux','MacOS'
         ProjectUri = 'https://github.com/neflyte/PSJobLogger'
         LicenseUri = 'https://github.com/neflyte/PSJobLogger/blob/main/LICENSE'

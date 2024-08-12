@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lists are used instead of Arrays wherever possible
 - Use an `enum` type instead of individual variables for each log stream
 - Migrate unit tests to Pester v5
+- Move shared enums and variables to their own modules
 
 ### Removed
 

@@ -1,9 +1,9 @@
-using module ./PSJobLogger.psm1
+using module ./PSJLStreams.psm1
+using module ./PSJLLogStreams.psm1
 using namespace System.Collections
 using namespace System.Collections.Concurrent
 
 function Initialize-PSJobLoggerDict {
-    [CmdletBinding()]
     [OutputType([ConcurrentDictionary[String, PSObject]])]
     param(
         [ValidateNotNull()]
@@ -38,8 +38,8 @@ function Initialize-PSJobLoggerDict {
         }
     }
     Set-Logfile -LogDict $logDict -Filename $Logfile
-    $logDict.Streams = [ConcurrentDictionary[int, ICollection]]::new($concurrencyLevel, $PSJLLogStreams.Count)
-    foreach ($stream in $PSJLLogStreams) {
+    $logDict.Streams = [ConcurrentDictionary[int, ICollection]]::new($concurrencyLevel, $([PSJLLogStreams]::AllStreams).Count)
+    foreach ($stream in $([PSJLLogStreams]::AllStreams)) {
         switch ([int]$stream) {
             ([int]([PSJLStreams]::Progress)) {
                 # TODO: Find a better starting value than `5`
@@ -63,7 +63,6 @@ function Initialize-PSJobLoggerDict {
 }
 
 function Set-Logfile {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -85,7 +84,6 @@ function Set-Logfile {
 }
 
 function Write-MessageToLogfile {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -106,7 +104,6 @@ function Write-MessageToLogfile {
 }
 
 function Format-LogMessage {
-    [CmdletBinding()]
     [OutputType([String])]
     param(
         [Parameter(Mandatory)]
@@ -129,7 +126,6 @@ function Format-LogMessage {
 }
 
 function Add-LogMessageToQueue {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -159,7 +155,6 @@ function Add-LogMessageToQueue {
 }
 
 function Write-LogOutput {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -171,7 +166,6 @@ function Write-LogOutput {
 }
 
 function Write-LogError {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -183,7 +177,6 @@ function Write-LogError {
 }
 
 function Write-LogWarning {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -195,7 +188,6 @@ function Write-LogWarning {
 }
 
 function Write-LogVerbose {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -207,7 +199,6 @@ function Write-LogVerbose {
 }
 
 function Write-LogDebug {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -219,7 +210,6 @@ function Write-LogDebug {
 }
 
 function Write-LogInformation {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -231,7 +221,6 @@ function Write-LogInformation {
 }
 
 function Write-LogHost {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -243,7 +232,6 @@ function Write-LogHost {
 }
 
 function Write-LogProgress {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -281,7 +269,6 @@ function Write-LogProgress {
 }
 
 function Show-LogProgress {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -313,7 +300,6 @@ function Show-LogProgress {
 }
 
 function Show-LogFromOneStream {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
@@ -347,31 +333,28 @@ function Show-LogFromOneStream {
 }
 
 function Show-Log {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict
     )
-    foreach ($stream in $PSJLLogStreams) {
+    foreach ($stream in $([PSJLLogStreams]::AllStreams)) {
         Show-LogFromOneStream -LogDict $LogDict -Stream [int]$stream
     }
 }
 
 function Show-PlainTextLog {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNull()]
         [ConcurrentDictionary[String, PSObject]]$LogDict
     )
-    foreach ($stream in $PSJLPlainTextLogStreams) {
+    foreach ($stream in $([PSJLLogStreams]::PlainTextStreams)) {
         Show-LogFromOneStream -LogDict $LogDict -Stream [int]$stream
     }
 }
 
 function Write-LogMessagesToStream {
-    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateScript(
@@ -419,3 +402,5 @@ function Write-LogMessagesToStream {
         }
     }
 }
+
+Export-ModuleMember -Function 'Add-LogMessageToQueue','Format-LogMessage','Initialize-PSJobLoggerDict','Set-Logfile','Show-LogProgress','Show-LogFromOneStream','Show-Log','Write-MessageToLogfile','Write-LogOutput','Write-LogError','Write-LogWarning','Write-LogVerbose','Write-LogDebug','Write-LogInformation','Write-LogProgress','Write-LogMessagesToStream'

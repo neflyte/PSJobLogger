@@ -1,6 +1,9 @@
-using module ../PSJobLogger
+using module ../PSJobLogger/PSJLStreams.psm1
+using module ../PSJobLogger/PSJLLogStreams.psm1
 using namespace System.Collections
 using namespace System.Collections.Concurrent
+
+Import-Module (Join-Path $PSScriptRoot '..' 'PSJobLogger' 'DictLogger.psm1') -Force
 
 BeforeAll {
     $LoggerName = 'DictLogger-test'

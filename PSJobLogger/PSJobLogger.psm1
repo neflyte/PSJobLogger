@@ -1,46 +1,9 @@
+using module ./PSJLStreams.psm1
+using module ./PSJLLogStreams.psm1
 using namespace System.Collections
 using namespace System.Collections.Concurrent
 using namespace System.Collections.Generic
 using namespace System.IO
-
-<# An enum of the available log streams #>
-enum PSJLStreams {
-    Success
-    Error
-    Warning
-    Verbose
-    Debug
-    Information
-    Progress
-    Host
-}
-
-$setVariableOpts = @{
-    Option = 'Constant'
-    Scope = 'Global'
-    ErrorAction = 'SilentlyContinue'
-}
-$PSJLLogStreams = @(
-    [PSJLStreams]::Success,
-    [PSJLStreams]::Error,
-    [PSJLStreams]::Warning,
-    [PSJLStreams]::Verbose,
-    [PSJLStreams]::Debug,
-    [PSJLStreams]::Information,
-    [PSJLStreams]::Progress,
-    [PSJLStreams]::Host
-)
-Set-Variable @setVariableOpts -Name PSJLLogStreams -Value $PSJLLogStreams
-$PSJLPlainTextLogStreams = @(
-    [PSJLStreams]::Success,
-    [PSJLStreams]::Error,
-    [PSJLStreams]::Warning,
-    [PSJLStreams]::Verbose,
-    [PSJLStreams]::Debug,
-    [PSJLStreams]::Information,
-    [PSJLStreams]::Host
-)
-Set-Variable @setVariableOpts -Name PSJLPlainTextLogStreams -Value $PSJLPlainTextLogStreams
 
 class PSJobLogger {
     <# The name of the logger; used to construct a "prefix" that is prepended to each message #>
@@ -69,11 +32,13 @@ class PSJobLogger {
         [int]$ProgressParentId = -1,
         [int]$EstimatedThreads = -1
     ) {
+        # Validate logger name
         if ($null -eq $Name) { throw 'Name parameter cannot be null' }
         $this.Name = $Name
         if ($Name -eq '') {
             $this.Name = 'PSJobLogger'
         }
+        # Validate log file
         if ($null -eq $Logfile) { throw 'Logfile parameter cannot be null' }
         $this.SetLogfile($Logfile)
         $this.UseQueues = $UseQueues
@@ -243,14 +208,14 @@ class PSJobLogger {
 
     [void]
     FlushStreams() {
-        foreach ($stream in $global:PSJLLogStreams) {
+        foreach ($stream in $([PSJLLogStreams]::AllStreams)) {
             $this.FlushOneStream([int]$stream)
         }
     }
 
     [void]
     FlushPlainTextStreams() {
-        foreach ($stream in $global:PSJLPlainTextLogStreams) {
+        foreach ($stream in $([PSJLLogStreams]::PlainTextStreams)) {
             $this.FlushOneStream([int]$stream)
         }
     }
@@ -396,7 +361,6 @@ class PSJobLogger {
     PS> $jobLog = Initialize-PSJobLogger -Name MyLogger -Logfile messages.log -ParentProgressId 0
 #>
 function Initialize-PSJobLogger {
-    [CmdletBinding()]
     [OutputType([PSJobLogger])]
     param(
         [ValidateNotNull()]
@@ -414,7 +378,6 @@ function Initialize-PSJobLogger {
 }
 
 function ConvertFrom-DictLogger {
-    [CmdletBinding()]
     [OutputType([PSJobLogger])]
     param(
         [Parameter(Mandatory)]
@@ -445,3 +408,5 @@ function ConvertFrom-DictLogger {
     $jobLog.SetStreamsFromDictLogger($DictLogger)
     return $jobLog
 }
+
+Export-ModuleMember -Function 'ConvertFrom-DictLogger','Initialize-PSJobLogger'
